@@ -822,3 +822,13 @@ phase report written. Tagging and pushing are yours.
 ## 5. Changelog of this plan
 - v0.1 (2026-10-12): first draft; decisions D1-D20 open.
 - v0.2 (2026-10-12): all decisions approved by the owner on 2026-10-12, including D4 rules command and D20 option b.
+- v0.3 (2026-10-12): Phase 1 deviations, awaiting acceptance (details in docs/phase-reports.md):
+  `Rule` is not in `core/models.py` yet (it needs the guarded pattern type of Phase 2);
+  `ScanStats` keeps skip counters as flat integer fields instead of a mapping;
+  `Limits.with_overrides` is lower-only (D19) and the D18 ceilings are a separate hard bound;
+  the architecture checker also enforces core purity (no os, sys, io, pathlib, time in `core/`)
+  and the `sys.platform` guard rule (no `os.name`, no `platform.system`);
+  coverage is measured over `src/secret_scanner` and `scripts`;
+  `authors` in pyproject.toml and the LICENSE holder are the placeholder "secret-scanner authors"
+  because the owner's name is not known to the session (D20 asks for a name only);
+  the type-walk test "no renderable model can hold a secret" was written in Phase 1, not Phase 2.
