@@ -4,9 +4,11 @@ by their positive controls in temporary repositories.
 Findings never contain the offending text: only a rule name, a path and a line number, plus (for
 secret-shaped strings) the redacted form.
 
-The secret-shaped checks are the minimal hard-coded set of PLAN.md D16 point 4 (AWS key id,
-GitHub token, private key block, Slack token, Stripe key). Phase 2 replaces them with the engine
-and checks that the engine covers every case of this set.
+Secret-shaped strings are found by the tool's own engine (PLAN.md D16 point 4): every built-in
+rule and the private-key detector, with no allowlist and the entropy detector off (a hygiene
+failure must be a real format, not a random-looking string). The minimal hard-coded set of
+Phase 1 (AWS key id, GitHub token, private key block, Slack token, Stripe key) is kept as
+`minimal_secret_shaped_strings`, and a test proves the engine covers every case of it.
 """
 
 from __future__ import annotations
@@ -19,7 +21,11 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from secret_scanner.core.detect.engine import Engine
+from secret_scanner.core.detect.entropy import EntropyConfig
+from secret_scanner.core.findings import redact_match
 from secret_scanner.core.redact import redact_secret
+from secret_scanner.services.loader import load_builtin_rules
 from tests.gitrepo import run_git
 
 SECRET_FILE_PATTERNS = (
@@ -157,7 +163,33 @@ def _key_body_chars(lines: list[str], index: int, tail: str) -> int:
     return total
 
 
+NON_SECRET_CHECKS = frozenset({"forbidden-character", "secret-file", "email-address"})
+_ENGINE: list[Engine] = []
+
+
+def _engine() -> Engine:
+    """The tool's own engine over every built-in rule, entropy off; built once."""
+    if not _ENGINE:
+        rules = list(load_builtin_rules().rules)
+        _ENGINE.append(Engine(rules, entropy=EntropyConfig(enabled=False)))
+    return _ENGINE[0]
+
+
+def is_secret_hit(hit: Hit) -> bool:
+    """True for the hits that mean a secret-shaped string (every engine rule and key block)."""
+    return hit.check not in NON_SECRET_CHECKS
+
+
 def secret_shaped_strings(path: str, text: str) -> list[Hit]:
+    """Run the engine over `text`; hits carry the rule id and the redacted form only."""
+    result = _engine().scan(text.encode("utf-8"))
+    return [
+        Hit(match.rule_id, path, match.line, redact_match(match).text) for match in result.matches
+    ]
+
+
+def minimal_secret_shaped_strings(path: str, text: str) -> list[Hit]:
+    """The hard-coded Phase 1 checks, kept to prove the engine covers every one of them."""
     hits: list[Hit] = []
     lines = text.split("\n")
     for number, line in enumerate(lines, start=1):

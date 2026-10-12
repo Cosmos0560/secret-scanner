@@ -1,9 +1,10 @@
 """Secret-shaped strings must never be committed (PLAN.md D16 point 4, CLAUDE.md section 4).
 
-Phase 1 uses the minimal hard-coded set of format checks (AWS key id, GitHub token, private key
-block, Slack token, Stripe key). Phase 2 switches this test to the engine. There is no allowlist:
-a hit is removed from the file, never excused. Every positive control builds its fake at runtime,
-from fragments, inside a temporary repository.
+The check is the tool's own engine: every built-in rule and the private-key detector run over
+every tracked and untracked-not-ignored file. There is no allowlist: a hit is removed from the
+file, never excused. Every positive control builds its fake at runtime, from fragments, inside a
+temporary repository, and a test proves the engine covers every case of the minimal Phase 1 set
+(AWS key id, GitHub token, private key block, Slack token, Stripe key).
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from secret_scanner.core.redact import MAX_SHOWN_CHARS
 from tests import hygiene
 from tests.gitrepo import GitRepo
 from tests.helpers import PROJECT_ROOT
@@ -35,8 +37,7 @@ def _checks(hits: list[hygiene.Hit]) -> list[str]:
 
 def test_repository_has_no_secret_shaped_strings(tmp_path: Path) -> None:
     hits = hygiene.check_repository(PROJECT_ROOT, tmp_path)
-    secret_hits = [hit for hit in hits if hit.check in {name for name, _ in hygiene.FORMAT_CHECKS}]
-    secret_hits += [hit for hit in hits if hit.check == "private-key"]
+    secret_hits = [hit for hit in hits if hygiene.is_secret_hit(hit)]
     assert secret_hits == [], "\n".join(hit.format() for hit in secret_hits)
 
 
@@ -60,7 +61,8 @@ def test_control_catches_a_generated_fake_in_a_temporary_repository(
     assert _checks(hits) == [kind]
     assert hits[0].path == "config/settings.txt"
     assert hits[0].line == 1
-    assert_not_leaked("\n".join(hit.format() for hit in hits), fake)
+    # The engine may show a rule's public prefix (PLAN.md D7: at most 12 characters), no more.
+    assert_not_leaked("\n".join(hit.format() for hit in hits), fake, allowed_shown=MAX_SHOWN_CHARS)
 
 
 def test_control_also_catches_a_staged_and_committed_fake(tmp_path: Path) -> None:
@@ -163,3 +165,48 @@ def test_body_of_exactly_the_minimum_fires() -> None:
 def test_every_minimal_check_has_a_fake_kind() -> None:
     names = {name for name, _ in hygiene.FORMAT_CHECKS} | {"private-key"}
     assert names == set(hygiene.FAKE_KINDS)
+
+
+# -- the engine covers every case of the minimal Phase 1 set ----------------------------------
+
+
+@pytest.mark.parametrize("kind", hygiene.FAKE_KINDS)
+def test_engine_finds_everything_the_minimal_checks_found(kind: str) -> None:
+    for seed in ("a", "b", "c"):
+        text = "value = " + hygiene.fake_secret(kind, seed) + "\n"
+        minimal = hygiene.minimal_secret_shaped_strings("f.txt", text)
+        engine = hygiene.secret_shaped_strings("f.txt", text)
+        assert [hit.check for hit in minimal] == [kind]
+        assert [(hit.check, hit.line) for hit in engine] == [
+            (hit.check, hit.line) for hit in minimal
+        ]
+
+
+def test_engine_agrees_with_the_minimal_checks_on_near_misses() -> None:
+    aws = hygiene.fake_secret("aws-access-key-id")
+    github = hygiene.fake_secret("github-token")
+    for text in [
+        aws[:-1],
+        aws + "A",
+        "x" + aws,
+        aws.lower(),
+        github[:-1],
+        github + "a",
+        "sk_live_",
+    ]:
+        assert hygiene.minimal_secret_shaped_strings("f.txt", text) == []
+        assert hygiene.secret_shaped_strings("f.txt", text) == []
+
+
+def test_hygiene_runs_every_builtin_rule() -> None:
+    from secret_scanner.core.fakes import build_fake
+    from secret_scanner.services.loader import load_builtin_rules
+
+    rules = {rule.id: rule for rule in load_builtin_rules().rules}
+    assert len(rules) == 13
+    assert set(rules).isdisjoint(hygiene.NON_SECRET_CHECKS)
+    for rule_id, rule in rules.items():
+        text = "k = " + build_fake(rule, "hygiene") + "\n"
+        context = "aws secret " if rule_id == "aws-secret-access-key" else ""
+        hits = hygiene.secret_shaped_strings("f.txt", context + text)
+        assert [hit.check for hit in hits] == [rule_id]
