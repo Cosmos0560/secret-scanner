@@ -834,8 +834,8 @@ phase report written. Tagging and pushing are yours.
   the type-walk test "no renderable model can hold a secret" was written in Phase 1, not Phase 2.
 - v0.4 (2026-10-12): Phase 2 follow-ups from the owner: the author placeholder is replaced by the
   owner's name in `pyproject.toml` and LICENSE (v0.3 deviation 6 resolved).
-- v0.5 (2026-10-12): Phase 2 deviations and interpretations, awaiting acceptance (details in
-  docs/phase-reports.md): `Rule`, `FakeSegment` and `Checksum` are in `core/models.py` (resolves
+- v0.5 (2026-10-12): Phase 2 deviations and interpretations, **accepted by the owner on
+  2026-10-12** (see v0.6; details in docs/phase-reports.md): `Rule`, `FakeSegment` and `Checksum` are in `core/models.py` (resolves
   v0.3 deviation 1); rule `context` is a list of 1 to 4 lower-case keywords that must all appear
   on the line; the `fake` spec is a list of segments and is the full matched text; the regex
   guard adds the rule that two adjacent variable-width items must not match the same byte, and
@@ -846,3 +846,15 @@ phase report written. Tagging and pushing are yours.
   `MAX_KEY_LINES` is reported at confidence medium; `Match` carries severity and shown
   characters; the test marker `requires_sh` and the hook launcher `scripts/hooks/run_guard.sh`
   (Phase 1 follow-up) are not in the plan.
+- v0.6 (2026-10-12): the owner accepted every deviation and interpretation listed in v0.5 and in
+  the Phase 2 report: `Rule`, `FakeSegment` and `Checksum` in `core/models.py`; `context` as a
+  keyword list; the `fake` spec as a segment list; the regex guard's neighbour-ambiguity rule and
+  its cost definition; entropy `=` as trailing padding only, hex minimum and the run-time 64-bit
+  floor; the entropy context window; `MAX_KEY_LINES` giving confidence medium; `Match` carrying
+  severity and shown characters; column counting by Python's replacement rule; the engine's
+  `capped` and long-line flags (issues are Phase 3); the `requires_sh` marker and the hook
+  launcher. The v0.3 (Phase 1) deviations are not covered by this entry and stay as they were.
+  Known limitations recorded for the README (Phase 6 Limitations section): token formats come from
+  knowledge, not from live checks; the Claude Code hook (a development control, not part of the
+  tool) cannot see shell aliases, variables or PowerShell `-EncodedCommand`, and is not in force
+  if `sh` cannot start.

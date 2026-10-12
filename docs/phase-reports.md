@@ -5,9 +5,9 @@ CLAUDE.md section 2, step 5. The last entry is the one a new session reads first
 
 ## In progress
 
-Nothing. Phases 1 and 2 are complete; Phase 3 (directory scan, suppression, `scan` with table and
-JSON) has not started. Phase 1 was reported green on all six CI jobs by the owner; the Phase 2
-code has not run in CI yet (Python 3.11 and 3.12 were only syntax-parsed locally).
+Phase 3 (directory scan, suppression, `scan` with table and JSON): Step 0 (owner decisions, gate
+time) is under way; no Phase 3 module exists yet. Phases 1 and 2 are complete, pushed, and the
+owner reports CI green on all six jobs.
 
 ## Phase 1 - Foundation, gate, hook, CI, pure core (2026-10-12)
 
@@ -123,7 +123,7 @@ Deviations from PLAN.md: Rule not yet in core/models.py (needs Phase 2 regex_gua
 7. A secret group wrapped in a quantified non-capturing group was accepted by the first guard
    draft; it is refused.
 
-### Deviations and interpretations (also in the PLAN.md changelog v0.5, awaiting acceptance)
+### Deviations and interpretations (also in the PLAN.md changelog v0.5; accepted by the owner on 2026-10-12, PLAN.md v0.6)
 
 1. `Rule`, `FakeSegment` and `Checksum` are in `core/models.py` (resolves v0.3 deviation 1).
 2. `context` is a list of 1 to 4 lower-case keywords that must all appear on the line (D4 says "a
@@ -164,11 +164,14 @@ Deviations from PLAN.md: Rule not yet in core/models.py (needs Phase 2 regex_gua
   release checks (hatchling is not in the venv).
 - The entropy detector flags near-miss tokens at confidence low; the default report level
   (medium) hides them. Documented in the negative-corpus test.
+- Recorded on 2026-10-12 as known limitations for the README: token formats come from knowledge,
+  not from live checks; the Claude Code hook (a development control) cannot see shell aliases,
+  variables or PowerShell `-EncodedCommand`, and is not in force if `sh` cannot start.
 
 ```
 Built: core/regex_guard.py (restricted grammar, named refusals, width and cost accounting, neighbour-ambiguity rule), Rule model, core/rules.py (schema), core/checksums.py (GitHub CRC32), core/fakes.py (runtime fake generator), services/loader.py (strict YAML: no duplicate keys, aliases, anchors, tags or merge keys; size cap; package data), rules/builtin.yaml (13 rules with fake specs), core/lines.py (binary, BOMs, UTF-16/32, lines, columns), core/detect (pre-filter, rule detector with checksum, entropy, private key state machine, engine with overlap resolution), core/findings.py (Match to redacted Finding), hygiene secret check switched to the engine; Step 0: owner name, hook gaps, blocking hook launcher
 Tests added: 732 (1434 total, 17 slow): regex guard 166 (every refusal reason, the D3 hostile table, CPython width cross-check, 1500 generated patterns), per-rule table 150 (13 rules x 8 contexts, near misses, placeholders, pre-filter consistency, checksum), loader and schema 99, entropy 67, fakes and checksums 36, private key 34, engine 31 (mixed and negative corpus, overlap reference), lines 28, hygiene +6, hook +68, launcher 8, slow tripwire 16
 Real coverage: 100.00% (branch, src/secret_scanner and scripts) in the full gate on Windows and in the full gate on WSL Ubuntu; floor 85
 Known gaps: CI has not run the Phase 2 code (Python 3.11 and 3.12 only parsed locally); token formats unverified against live services; wheel package-data inclusion unchecked until Phase 6; entropy flags near-miss tokens at low confidence; engine result flags (capped, long lines) are not yet issues; hook still cannot see aliases, variables or -EncodedCommand and fails open if sh cannot start; default gate 56 s to 60 s, at the 60 s target
-Deviations from PLAN.md: Rule in core/models.py; context is a keyword list; fake spec is a segment list; guard adds the neighbour-ambiguity rule and defines cost as width times alternation paths; entropy treats = as trailing padding only and enforces the 64-bit floor at run time; MAX_KEY_LINES gives medium not an issue; Match carries severity and shown_chars; requires_sh marker and hook launcher (all marked awaiting acceptance in the PLAN.md changelog)
+Deviations from PLAN.md: Rule in core/models.py; context is a keyword list; fake spec is a segment list; guard adds the neighbour-ambiguity rule and defines cost as width times alternation paths; entropy treats = as trailing padding only and enforces the 64-bit floor at run time; MAX_KEY_LINES gives medium not an issue; Match carries severity and shown_chars; requires_sh marker and hook launcher (all accepted by the owner on 2026-10-12, PLAN.md v0.6)
 ```
