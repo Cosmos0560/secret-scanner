@@ -28,7 +28,8 @@ from secret_scanner.core.models import Rule
 from secret_scanner.core.rules import parse_rules_document
 
 BUILTIN_RULES_PACKAGE = "secret_scanner"
-BUILTIN_RULES_PATH = ("rules", "builtin.yaml")
+BUILTIN_RULES_DIRECTORY = "rules"
+BUILTIN_RULES_FILE = "builtin.yaml"
 _MERGE_TAG = "tag:yaml.org,2002:merge"
 
 
@@ -118,5 +119,5 @@ def load_rules_from_bytes(
 
 def load_builtin_rules(limits: Limits = DEFAULT_LIMITS) -> RuleSet:
     """The built-in rules, read from the package data."""
-    resource = resources.files(BUILTIN_RULES_PACKAGE).joinpath(*BUILTIN_RULES_PATH)
+    resource = resources.files(BUILTIN_RULES_PACKAGE) / BUILTIN_RULES_DIRECTORY / BUILTIN_RULES_FILE
     return load_rules_from_bytes(resource.read_bytes(), limits=limits, what="built-in rules")
