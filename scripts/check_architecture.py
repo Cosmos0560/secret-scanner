@@ -89,6 +89,7 @@ SAME_LAYER_ALLOWED: Mapping[str, frozenset[str]] = {
         }
     ),
     "core.lines": frozenset(),
+    "core.globs": frozenset({"core.errors", "core.limits", "core.sanitize"}),
     "core.findings": frozenset(
         {"core.detect.match", "core.fingerprint", "core.models", "core.redact"}
     ),
