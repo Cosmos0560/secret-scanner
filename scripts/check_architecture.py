@@ -70,11 +70,75 @@ SAME_LAYER_ALLOWED: Mapping[str, frozenset[str]] = {
     "core.sanitize": frozenset(),
     "core.errors": frozenset({"core.sanitize"}),
     "core.limits": frozenset({"core.errors"}),
-    "core.models": frozenset(),
+    "core.models": frozenset({"core.regex_guard"}),
     "core.pathrules": frozenset({"core.errors", "core.limits", "core.sanitize"}),
     "core.redact": frozenset({"core.errors", "core.models"}),
     "core.fingerprint": frozenset(),
     "core.clock": frozenset(),
+    "core.checksums": frozenset(),
+    "core.regex_guard": frozenset({"core.errors", "core.limits"}),
+    "core.fakes": frozenset({"core.checksums", "core.models"}),
+    "core.rules": frozenset(
+        {
+            "core.errors",
+            "core.fakes",
+            "core.limits",
+            "core.models",
+            "core.redact",
+            "core.regex_guard",
+        }
+    ),
+    "core.lines": frozenset(),
+    "core.findings": frozenset(
+        {"core.detect.match", "core.fingerprint", "core.models", "core.redact"}
+    ),
+    "core.detect.match": frozenset({"core.models"}),
+    "core.detect.prefilter": frozenset(),
+    "core.detect.entropy": frozenset(
+        {
+            "core.detect.match",
+            "core.errors",
+            "core.limits",
+            "core.lines",
+            "core.models",
+            "core.redact",
+            "core.regex_guard",
+            "core.rules",
+        }
+    ),
+    "core.detect.rule_detector": frozenset(
+        {
+            "core.checksums",
+            "core.detect.entropy",
+            "core.detect.match",
+            "core.detect.prefilter",
+            "core.lines",
+            "core.models",
+        }
+    ),
+    "core.detect.private_key": frozenset(
+        {
+            "core.detect.match",
+            "core.limits",
+            "core.lines",
+            "core.models",
+            "core.regex_guard",
+            "core.rules",
+        }
+    ),
+    "core.detect.engine": frozenset(
+        {
+            "core.detect.entropy",
+            "core.detect.match",
+            "core.detect.prefilter",
+            "core.detect.private_key",
+            "core.detect.rule_detector",
+            "core.limits",
+            "core.lines",
+            "core.models",
+        }
+    ),
+    "services.loader": frozenset(),
     "cli.main": frozenset(),
 }
 
