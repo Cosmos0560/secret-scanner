@@ -832,3 +832,5 @@ phase report written. Tagging and pushing are yours.
   `authors` in pyproject.toml and the LICENSE holder are the placeholder "secret-scanner authors"
   because the owner's name is not known to the session (D20 asks for a name only);
   the type-walk test "no renderable model can hold a secret" was written in Phase 1, not Phase 2.
+- v0.4 (2026-10-12): Phase 2 follow-ups from the owner: the author placeholder is replaced by the
+  owner's name in `pyproject.toml` and LICENSE (v0.3 deviation 6 resolved).
