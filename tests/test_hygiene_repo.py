@@ -92,15 +92,18 @@ def _repo(tmp_path: Path) -> GitRepo:
     return GitRepo.create(tmp_path / "control", tmp_path)
 
 
-@pytest.mark.parametrize("code_point", BIDI + ZERO_WIDTH + [0x07, 0x1B, 0x7F, 0x85])
-def test_forbidden_character_control_detects_each(code_point: int, tmp_path: Path) -> None:
+def test_forbidden_character_control_detects_each(tmp_path: Path) -> None:
+    # One repository for every code point (a git process per case would dominate the gate time);
+    # each code point still has its own file and must be reported at its own line, alone.
     repo = _repo(tmp_path)
-    repo.write("notes.txt", "fine line\nbad" + chr(code_point) + "line\n")
+    code_points = [*BIDI, *ZERO_WIDTH, 0x07, 0x1B, 0x7F, 0x85]
+    for code_point in code_points:
+        repo.write(f"notes-{code_point:04x}.txt", "fine line\nbad" + chr(code_point) + "line\n")
     hits = hygiene.check_repository(repo.path, tmp_path)
-    assert [(hit.check, hit.path, hit.line) for hit in hits] == [
-        ("forbidden-character", "notes.txt", 2)
-    ]
-    assert "bad" not in hits[0].format()  # findings never carry file content
+    assert sorted((hit.check, hit.path, hit.line) for hit in hits) == sorted(
+        ("forbidden-character", f"notes-{code_point:04x}.txt", 2) for code_point in code_points
+    )
+    assert all("bad" not in hit.format() for hit in hits)  # findings never carry file content
 
 
 def test_allowed_whitespace_is_not_flagged(tmp_path: Path) -> None:
@@ -109,29 +112,32 @@ def test_allowed_whitespace_is_not_flagged(tmp_path: Path) -> None:
     assert hygiene.check_repository(repo.path, tmp_path) == []
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        "server.key",
-        "cert.pem",
-        "store.p12",
-        "store.pfx",
-        "id_rsa",
-        "id_rsa.pub",
-        "id_ed25519",
-        "keys/id_ed25519.bak",
-        ".env",
-        ".env.production",
-        "release.keystore",
-        "release.jks",
-        "UPPER.PEM",
-    ],
-)
-def test_secret_file_control_detects_each_name(name: str, tmp_path: Path) -> None:
+SECRET_FILE_NAMES = [
+    "server.key",
+    "cert.pem",
+    "store.p12",
+    "store.pfx",
+    "id_rsa",
+    "id_rsa.pub",
+    "id_ed25519",
+    "keys/id_ed25519.bak",
+    ".env",
+    ".env.production",
+    "release.keystore",
+    "release.jks",
+    "UPPER.PEM",
+]
+
+
+def test_secret_file_control_detects_each_name(tmp_path: Path) -> None:
+    # One repository for every name; each name must be reported, as a secret file, once.
     repo = _repo(tmp_path)
-    repo.write(name, "placeholder\n")
+    for name in SECRET_FILE_NAMES:
+        repo.write(name, "placeholder\n")
     hits = hygiene.check_repository(repo.path, tmp_path)
-    assert [hit.check for hit in hits] == ["secret-file"]
+    assert sorted((hit.check, hit.path) for hit in hits) == sorted(
+        ("secret-file", name) for name in SECRET_FILE_NAMES
+    )
 
 
 def test_secret_file_control_ignores_ordinary_names(tmp_path: Path) -> None:
