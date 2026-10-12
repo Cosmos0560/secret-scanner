@@ -199,3 +199,23 @@ def test_display_text_must_be_escaped_at_construction() -> None:
     assert ScanIssue(kind=IssueKind.UNREADABLE, path=None, detail="ok").path is None
     escaped = Location(path_key="a\nb", path="a\\nb", line=1, column=1, end_column=2)
     assert escaped.path == "a\\nb"
+
+
+def test_report_target_display_must_be_escaped() -> None:
+    kwargs = {
+        "target": Target.FS,
+        "findings": (),
+        "suppressed_by_fingerprint": 0,
+        "suppressed_by_path": 0,
+        "stale": None,
+        "issues": (),
+        "stats": ScanStats(),
+        "complete": True,
+        "truncated": False,
+        "rules_sha256": "0" * 64,
+        "generated_at": "2026-01-01T00:00:00Z",
+        "tool_version": "0.1.0",
+    }
+    assert Report(target_display="dir/ok", **kwargs).target_display == "dir/ok"  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="target_display"):
+        Report(target_display="bad\nname", **kwargs)  # type: ignore[arg-type]

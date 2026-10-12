@@ -1,0 +1,187 @@
+"""The ONLY reader and writer of the tool's own files (PLAN.md section 1.4, CLAUDE.md section 5
+invariants 9 and 10): configuration, rules and baseline are read here, reports and baselines are
+written here.
+
+Reading: the file must be a regular file and not a link or reparse point, is size-checked before
+it is read, and the opened descriptor must be the file that was examined.
+
+Writing: the data goes into a new temporary file next to the target (created exclusively, mode
+0600, flushed to disk) and is then published with a single rename. Without `force` the publish
+step fails if the target exists (a hard link on POSIX, a rename on Windows, both atomic and
+no-clobber); with `force` it replaces the target. A target that is a symbolic link, a reparse
+point, a directory or a special file is refused whatever `force` says, and because the final step
+replaces the directory entry rather than writing through it, a link planted at the last moment is
+replaced, never followed.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import errno
+import os
+import stat
+import sys
+
+from secret_scanner.core.entries import EntryKind, classify_stat
+from secret_scanner.core.errors import ScanIOError
+from secret_scanner.core.sanitize import sanitize
+
+_SHOWN_PATH_CHARS = 120
+_TEMP_SUFFIX = ".tmp"
+
+
+def _shown(path: str) -> str:
+    return sanitize(path, max_chars=_SHOWN_PATH_CHARS)
+
+
+def _errno_name(error: OSError) -> str:
+    return errno.errorcode.get(error.errno or 0, "unknown")
+
+
+def _kind_of(info: os.stat_result) -> EntryKind:
+    return classify_stat(info, windows=sys.platform == "win32")
+
+
+def _read_flags() -> int:
+    flags = os.O_RDONLY
+    for name in ("O_BINARY", "O_NOFOLLOW", "O_CLOEXEC"):
+        flags |= getattr(os, name, 0)
+    return flags
+
+
+def read_own_file(path: str, max_bytes: int, what: str) -> bytes:
+    """Read a configuration, rules or baseline file of at most `max_bytes`. `what` names the file
+    in error messages ("configuration file"). Raises `ScanIOError`; never includes content."""
+    shown = f"{what} {_shown(path)}"
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        raise ScanIOError(f"{shown}: does not exist") from None
+    except OSError as error:
+        raise ScanIOError(f"{shown}: cannot be examined ({_errno_name(error)})") from None
+    kind = _kind_of(info)
+    if kind in {EntryKind.SYMLINK, EntryKind.REPARSE_POINT}:
+        raise ScanIOError(f"{shown}: is a link or reparse point; pass the real file")
+    if kind is not EntryKind.REGULAR:
+        raise ScanIOError(f"{shown}: is not a regular file")
+    if info.st_size > max_bytes:
+        raise ScanIOError(f"{shown}: larger than the limit of {max_bytes} bytes")
+    try:
+        descriptor = os.open(path, _read_flags())
+    except OSError as error:
+        raise ScanIOError(f"{shown}: cannot be opened ({_errno_name(error)})") from None
+    try:
+        opened = os.fstat(descriptor)
+        same = not (opened.st_ino and info.st_ino) or (opened.st_dev, opened.st_ino) == (
+            info.st_dev,
+            info.st_ino,
+        )
+        if not stat.S_ISREG(opened.st_mode) or not same:
+            raise ScanIOError(f"{shown}: changed while it was being opened")
+        chunks: list[bytes] = []
+        total = 0
+        while total <= max_bytes:
+            chunk = os.read(descriptor, min(1024 * 1024, max_bytes + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+        if total > max_bytes:
+            raise ScanIOError(f"{shown}: larger than the limit of {max_bytes} bytes")
+        return b"".join(chunks)
+    except OSError as error:
+        raise ScanIOError(f"{shown}: cannot be read ({_errno_name(error)})") from None
+    finally:
+        os.close(descriptor)
+
+
+def _check_target(path: str, *, force: bool) -> None:
+    shown = _shown(path)
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return
+    except OSError as error:
+        raise ScanIOError(f"output {shown}: cannot be examined ({_errno_name(error)})") from None
+    kind = _kind_of(info)
+    if kind in {EntryKind.SYMLINK, EntryKind.REPARSE_POINT}:
+        raise ScanIOError(f"output {shown}: is a link or reparse point; refusing to write there")
+    if kind is not EntryKind.REGULAR:
+        raise ScanIOError(f"output {shown}: exists and is not a regular file")
+    if not force:
+        raise ScanIOError(f"output {shown}: already exists (use --force to replace it)")
+
+
+def _write_all(descriptor: int, data: bytes) -> None:
+    view = memoryview(data)
+    while view:
+        written = os.write(descriptor, view)
+        view = view[written:]
+
+
+def _flush_directory(directory: str) -> None:
+    """Best effort: make the rename durable on POSIX. Not meaningful on Windows."""
+    if sys.platform != "win32":
+        try:
+            descriptor = os.open(directory, os.O_RDONLY)
+        except OSError:
+            return
+        try:
+            with contextlib.suppress(OSError):
+                os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+
+def write_new_file(path: str, data: bytes, *, force: bool = False) -> None:
+    """Atomically create the file `path` with `data`; with `force`, replace an existing regular
+    file. Raises `ScanIOError` with a fixed reason; the target is never written through a link."""
+    shown = _shown(path)
+    _check_target(path, force=force)
+    directory = os.path.dirname(os.path.abspath(path))
+    if not os.path.isdir(directory):
+        raise ScanIOError(f"output {shown}: the directory does not exist")
+    temp = os.path.join(directory, f".{os.path.basename(path)}.{os.urandom(8).hex()}{_TEMP_SUFFIX}")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    for name in ("O_BINARY", "O_NOFOLLOW", "O_CLOEXEC"):
+        flags |= getattr(os, name, 0)
+    try:
+        descriptor = os.open(temp, flags, 0o600)
+    except OSError as error:
+        raise ScanIOError(f"output {shown}: cannot be created ({_errno_name(error)})") from None
+    try:
+        try:
+            _write_all(descriptor, data)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        try:
+            if force:
+                os.replace(temp, path)
+            elif sys.platform == "win32":
+                os.rename(temp, path)  # fails if the target exists
+            else:
+                os.link(temp, path)  # fails if the target exists
+        except FileExistsError:
+            raise ScanIOError(f"output {shown}: already exists (use --force)") from None
+        except OSError as error:
+            raise ScanIOError(f"output {shown}: cannot be written ({_errno_name(error)})") from None
+    except OSError as error:
+        raise ScanIOError(f"output {shown}: cannot be written ({_errno_name(error)})") from None
+    finally:
+        # After a rename the temporary name is already gone; after a link, or a failure, it is
+        # still there and must not be left behind.
+        with contextlib.suppress(OSError):
+            os.unlink(temp)
+    _flush_directory(directory)
+
+
+def is_inside(root: str, candidate: str) -> bool:
+    """True when `candidate` (which need not exist) resolves to a place inside the directory
+    `root`, after resolving links in both. Used to keep outputs out of a scanned tree."""
+    resolved_root = os.path.normcase(os.path.realpath(root))
+    resolved = os.path.normcase(os.path.realpath(candidate))
+    try:
+        return os.path.commonpath([resolved_root, resolved]) == resolved_root
+    except ValueError:  # different drives
+        return False
