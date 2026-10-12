@@ -1,0 +1,209 @@
+# Built-in rules (PLAN.md D4). Loaded with the strict loader (D19); every regex passes the guard
+# (D3) and has exactly one (?P<secret>...) group. The `fake` spec lets the fake generator (D16)
+# build a matching value at runtime: prefix parts are stored apart and joined there, so no complete
+# secret-shaped string exists in this file. Formats come from public vendor documentation as known
+# when the rules were written; they are not verified against live services.
+#
+# Fields: id, name, description, regex, keywords (lower-case; a line must contain one before the
+# regex runs), severity, confidence, shown_chars (leading characters that are a public prefix),
+# min_secret_bits (at least 64 and guaranteed by the regex), min_entropy (rejects placeholders),
+# checksum (offline), context (all must appear on the same line), fake.
+#
+# The private-key and entropy detectors are not regexes and are not listed here.
+version: 1
+rules:
+  - id: aws-access-key-id
+    name: AWS access key id
+    description: An AWS access key id (AKIA, ASIA, ABIA or ACCA followed by 16 base32 characters).
+    regex: '(?<![A-Za-z0-9])(?P<secret>(?:AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16})(?![A-Za-z0-9])'
+    keywords: [akia, asia, abia, acca]
+    severity: high
+    confidence: high
+    shown_chars: 4
+    min_secret_bits: 80
+    min_entropy: 3.0
+    fake:
+      - parts: ["AK", "IA"]
+      - {charset: base32, length: 16}
+
+  - id: aws-secret-access-key
+    name: AWS secret access key
+    description: A 40-character base64 value on a line that names both aws and secret.
+    regex: '(?<![A-Za-z0-9/+])(?P<secret>[A-Za-z0-9/+]{40})(?![A-Za-z0-9/+=])'
+    keywords: [aws]
+    context: [aws, secret]
+    severity: critical
+    confidence: medium
+    shown_chars: 0
+    min_secret_bits: 200
+    min_entropy: 3.5
+    fake:
+      - {charset: base64, length: 40}
+
+  - id: github-token
+    name: GitHub token
+    description: A GitHub personal access, OAuth, user, server or refresh token (ghp_, gho_, ghu_, ghs_, ghr_).
+    regex: '(?<![A-Za-z0-9_])(?P<secret>gh[pousr]_[A-Za-z0-9]{36})(?![A-Za-z0-9_])'
+    keywords: [ghp_, gho_, ghu_, ghs_, ghr_]
+    severity: critical
+    confidence: high
+    shown_chars: 4
+    min_secret_bits: 200
+    min_entropy: 3.5
+    checksum: github-crc32
+    fake:
+      - parts: ["gh", "p", "_"]
+      - {charset: base62, length: 36}
+
+  - id: github-fine-grained-pat
+    name: GitHub fine-grained personal access token
+    description: A GitHub fine-grained personal access token (github_pat_ followed by 22, an underscore and 59 characters).
+    regex: '(?<![A-Za-z0-9_])(?P<secret>github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59})(?![A-Za-z0-9_])'
+    keywords: [github_pat_]
+    severity: critical
+    confidence: high
+    shown_chars: 11
+    min_secret_bits: 400
+    min_entropy: 3.5
+    fake:
+      - parts: ["github_", "pat_"]
+      - {charset: base62, length: 22}
+      - parts: ["_"]
+      - {charset: base62, length: 59}
+
+  - id: gitlab-pat
+    name: GitLab personal access token
+    description: A GitLab personal access token (glpat- followed by 20 to 64 characters).
+    regex: '(?<![0-9A-Za-z_-])(?P<secret>glpat-[0-9A-Za-z_-]{20,64})(?![0-9A-Za-z_-])'
+    keywords: [glpat-]
+    severity: critical
+    confidence: high
+    shown_chars: 6
+    min_secret_bits: 100
+    min_entropy: 3.0
+    fake:
+      - parts: ["glpat", "-"]
+      - {charset: base64url, length: 20}
+
+  - id: slack-token
+    name: Slack token
+    description: A Slack bot, user, app, refresh or legacy token (xoxb-, xoxp-, xoxa-, xoxr-, xoxs-).
+    regex: '(?<![A-Za-z0-9])(?P<secret>xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[A-Za-z0-9]{24,34}|xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[0-9]{10,13}-[A-Za-z0-9]{24,34})(?![A-Za-z0-9])'
+    keywords: [xoxb-, xoxp-, xoxa-, xoxr-, xoxs-]
+    severity: high
+    confidence: high
+    shown_chars: 5
+    min_secret_bits: 150
+    min_entropy: 3.0
+    fake:
+      - parts: ["xo", "xb", "-"]
+      - {charset: digits, length: 11}
+      - parts: ["-"]
+      - {charset: digits, length: 12}
+      - parts: ["-"]
+      - {charset: base62, length: 24}
+
+  - id: slack-webhook-url
+    name: Slack incoming webhook URL
+    description: A Slack incoming webhook URL (hooks.slack.com/services/ followed by T..., B... and 24 characters).
+    regex: '(?<![A-Za-z0-9.-])hooks\.slack\.com/services/(?P<secret>T[A-Za-z0-9]{8,12}/B[A-Za-z0-9]{8,12}/[A-Za-z0-9]{24})(?![A-Za-z0-9])'
+    keywords: [hooks.slack.com]
+    severity: medium
+    confidence: high
+    shown_chars: 0
+    min_secret_bits: 200
+    min_entropy: 3.0
+    fake:
+      - parts: ["hooks.slack", ".com/services/", "T"]
+      - {charset: base62, length: 9}
+      - parts: ["/", "B"]
+      - {charset: base62, length: 9}
+      - parts: ["/"]
+      - {charset: base62, length: 24}
+
+  - id: stripe-secret-key
+    name: Stripe live secret key
+    description: A Stripe live secret or restricted key (sk_live_ or rk_live_ followed by 24 to 99 characters).
+    regex: '(?<![A-Za-z0-9_])(?P<secret>[rs]k_live_[0-9A-Za-z]{24,99})(?![0-9A-Za-z_])'
+    keywords: [sk_live_, rk_live_]
+    severity: critical
+    confidence: high
+    shown_chars: 8
+    min_secret_bits: 120
+    min_entropy: 3.5
+    fake:
+      - parts: ["s", "k_", "li", "ve_"]
+      - {charset: base62, length: 30}
+
+  - id: google-api-key
+    name: Google API key
+    description: A Google API key (AIza followed by 35 characters).
+    regex: '(?<![0-9A-Za-z_-])(?P<secret>AIza[0-9A-Za-z_-]{35})(?![0-9A-Za-z_-])'
+    keywords: [aiza]
+    severity: high
+    confidence: high
+    shown_chars: 4
+    min_secret_bits: 200
+    min_entropy: 3.5
+    fake:
+      - parts: ["AI", "za"]
+      - {charset: base64url, length: 35}
+
+  - id: npm-token
+    name: npm access token
+    description: An npm access token (npm_ followed by 36 alphanumeric characters).
+    regex: '(?<![A-Za-z0-9_])(?P<secret>npm_[A-Za-z0-9]{36})(?![A-Za-z0-9_])'
+    keywords: [npm_]
+    severity: high
+    confidence: high
+    shown_chars: 4
+    min_secret_bits: 200
+    min_entropy: 3.5
+    fake:
+      - parts: ["np", "m_"]
+      - {charset: base62, length: 36}
+
+  - id: pypi-token
+    name: PyPI API token
+    description: A PyPI API token (pypi- and the fixed macaroon header for pypi.org, then at least 50 characters).
+    regex: '(?<![A-Za-z0-9_-])(?P<secret>pypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{50,300})(?![A-Za-z0-9_-])'
+    keywords: [pypi-]
+    severity: critical
+    confidence: high
+    shown_chars: 5
+    min_secret_bits: 256
+    min_entropy: 3.5
+    fake:
+      - parts: ["py", "pi-", "AgEI", "cHlwaS5vcmc"]
+      - {charset: base64url, length: 60}
+
+  - id: sendgrid-api-key
+    name: SendGrid API key
+    description: A SendGrid API key (SG. followed by 22, a dot and 43 characters).
+    regex: '(?<![A-Za-z0-9_-])(?P<secret>SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43})(?![A-Za-z0-9_-])'
+    keywords: [sg.]
+    severity: high
+    confidence: high
+    shown_chars: 3
+    min_secret_bits: 300
+    min_entropy: 3.5
+    fake:
+      - parts: ["S", "G."]
+      - {charset: base64url, length: 22}
+      - parts: ["."]
+      - {charset: base64url, length: 43}
+
+  - id: azure-storage-account-key
+    name: Azure storage account key
+    description: An Azure storage account key in a connection string (AccountKey= and 86 base64 characters ending in ==).
+    regex: '(?<![A-Za-z0-9])AccountKey=(?P<secret>[A-Za-z0-9+/]{86}==)(?![A-Za-z0-9+/=])'
+    keywords: [accountkey=]
+    severity: critical
+    confidence: high
+    shown_chars: 0
+    min_secret_bits: 400
+    min_entropy: 3.5
+    fake:
+      - parts: ["Account", "Key="]
+      - {charset: base64, length: 86}
+      - parts: ["=="]

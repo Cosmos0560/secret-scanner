@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from secret_scanner.core.regex_guard import GuardedPattern
+
 _HEX = frozenset("0123456789abcdef")
 
 
@@ -76,6 +78,42 @@ class IssueKind(StrEnum):
     MISSING_OBJECT = "missing_object"
     SHALLOW_HISTORY = "shallow_history"
     FINDINGS_CAP = "findings_cap"
+
+
+class Checksum(StrEnum):
+    """Offline checksums a rule may verify (no network, PLAN.md D4)."""
+
+    GITHUB_CRC32 = "github-crc32"
+
+
+@dataclass(frozen=True, slots=True)
+class FakeSegment:
+    """One piece of a rule's fake secret (PLAN.md D16): literal `parts` joined at runtime, or a
+    generated run of `length` characters from the named charset."""
+
+    parts: tuple[str, ...] = ()
+    charset: str = ""
+    length: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class Rule:
+    """A detection rule (PLAN.md D4). The pattern has passed the regex guard."""
+
+    id: str
+    name: str
+    description: str
+    detector: Detector
+    pattern: GuardedPattern
+    keywords: tuple[str, ...]
+    severity: Severity
+    confidence: Confidence
+    shown_chars: int
+    min_secret_bits: int
+    min_entropy: float | None
+    checksum: Checksum | None
+    context: tuple[str, ...]
+    fake: tuple[FakeSegment, ...]
 
 
 @dataclass(frozen=True, slots=True)
