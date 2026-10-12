@@ -95,7 +95,10 @@ def read_own_file(path: str, max_bytes: int, what: str) -> bytes:
         os.close(descriptor)
 
 
-def _check_target(path: str, *, force: bool) -> None:
+def check_output_target(path: str, *, force: bool) -> None:
+    """Refuse an output target that could not be written (a link, a directory, a special file,
+    or an existing file without `force`). `write_new_file` repeats the check at write time; the
+    application calls this first so a long scan is not wasted on an output that cannot be made."""
     shown = _shown(path)
     try:
         info = os.lstat(path)
@@ -137,7 +140,7 @@ def write_new_file(path: str, data: bytes, *, force: bool = False) -> None:
     """Atomically create the file `path` with `data`; with `force`, replace an existing regular
     file. Raises `ScanIOError` with a fixed reason; the target is never written through a link."""
     shown = _shown(path)
-    _check_target(path, force=force)
+    check_output_target(path, force=force)
     directory = os.path.dirname(os.path.abspath(path))
     if not os.path.isdir(directory):
         raise ScanIOError(f"output {shown}: the directory does not exist")

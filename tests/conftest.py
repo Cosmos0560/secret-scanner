@@ -78,6 +78,7 @@ GUARDED_FUNCTIONS: dict[str, dict[str, tuple[str, ...]]] = {
     "secret_scanner.fs.safe_files": {
         "read_own_file": ("path",),
         "write_new_file": ("path",),
+        "check_output_target": ("path",),
         "is_inside": ("root", "candidate"),
     },
 }

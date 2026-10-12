@@ -203,7 +203,7 @@ def test_a_link_planted_after_the_check_is_replaced_not_followed(
     def plant(path: str, *, force: bool) -> None:
         os.symlink(victim, path)  # the race: the link appears right after the check passed
 
-    monkeypatch.setattr(safe_files, "_check_target", plant)
+    monkeypatch.setattr(safe_files, "check_output_target", plant)
     write_new_file(str(target), b"report", force=True)
     assert victim.read_bytes() == b"victim data"  # never written through
     assert target.read_bytes() == b"report"
@@ -218,7 +218,7 @@ def test_a_target_created_after_the_check_is_not_clobbered_without_force(
     def create(path: str, *, force: bool) -> None:
         Path(path).write_bytes(b"won the race")
 
-    monkeypatch.setattr(safe_files, "_check_target", create)
+    monkeypatch.setattr(safe_files, "check_output_target", create)
     with pytest.raises(ScanIOError, match="already exists"):
         write_new_file(str(target), b"loser")
     assert target.read_bytes() == b"won the race"

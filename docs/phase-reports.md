@@ -5,9 +5,37 @@ CLAUDE.md section 2, step 5. The last entry is the one a new session reads first
 
 ## In progress
 
-Phase 3 (directory scan, suppression, `scan` with table and JSON): Step 0 (owner decisions, gate
-time) is under way; no Phase 3 module exists yet. Phases 1 and 2 are complete, pushed, and the
-owner reports CI green on all six jobs.
+Phase 3 (directory scan, suppression, `scan` with table and JSON) is partly built; Step 0 (owner
+decisions, gate time) is done and committed. Stopped at a clean commit because the usage limit was
+reached; the Phase 3 report and the WSL Linux check have NOT been done.
+
+Done and committed (each through the gate): `core/globs.py`, `core/suppress.py` (baseline schema,
+matching, stale counting, document writer), `core/entries.py`, display-safety validation on
+`Location`, `ScanIssue` and `Report`, `fs/walk.py`, `fs/safe_files.py`, the temporary-path guard in
+`tests/conftest.py`, `host/clock.py`, `host/hostinfo.py`, `services/config.py` (+ `dump_yaml` in the
+loader), `services/fs_scanner.py`. The default gate is about 21 s to 25 s (was 45 s to 60 s): the
+private key header pattern was compiled once per file; hygiene control tests now share one repository.
+
+To do, in order: (1) add tests for `fs_scanner._count_skip` (symlink, offline, special branches, now
+uncovered); (2) `render/table.py` and `render/json_out.py` (pure; Report.findings holds reported
+findings plus suppressed ones, marked, when `--show-suppressed`; JSON schema `secret-report/1`
+as sketched in the session: schema, tool, generated_at, host, rules_sha256, target, complete,
+truncated, history_complete, counts, stats, findings, issues; `json.dumps(ensure_ascii=True)`);
+(3) `app/scan.py` (validate paths with pathrules, `check_scan_root`, outputs outside the scanned
+tree via `safe_files.is_inside`, `check_output_target` before scanning, config/baseline merge with CLI
+over config, confidence filter, suppression, stale only when complete, exit codes 0/1/4, call
+`walk`/`safe_files` module-qualified so the path guard applies); (4) CLI `scan` subcommand
+(`--format table|json`, `--output`, `--force`, `--config`, `--baseline`, `--write-baseline`,
+`--show-suppressed`, `--min-confidence`, `--fail-on`, `--no-default-excludes`, `--host-label`);
+(5) end-to-end tests: exit-code table, redaction/leak tests on every output path and error path,
+hostile names, cp1252 stdout, output atomicity and `--force`, baseline round trip; (6)
+`docs/report-schema.md` and drift tests; (7) PLAN.md changelog v0.7 and the Phase 3 report.
+
+Interpretation to record as "awaiting acceptance" in the changelog: PLAN.md Phase 3 Scope excludes
+`--write-baseline` but its Tests list requires the `--write-baseline` / `--baseline` round trip, so
+`--write-baseline` is built in Phase 3. The `rules` command is in no phase list (Phase 3 excludes
+it); it needs an owner decision on which phase builds it. The v0.3 (Phase 1) deviations were not
+covered by the owner's acceptance and stay awaiting acceptance.
 
 ## Phase 1 - Foundation, gate, hook, CI, pure core (2026-10-12)
 
