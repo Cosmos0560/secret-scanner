@@ -70,7 +70,7 @@ SAME_LAYER_ALLOWED: Mapping[str, frozenset[str]] = {
     "core.sanitize": frozenset(),
     "core.errors": frozenset({"core.sanitize"}),
     "core.limits": frozenset({"core.errors"}),
-    "core.models": frozenset({"core.regex_guard"}),
+    "core.models": frozenset({"core.regex_guard", "core.sanitize"}),
     "core.pathrules": frozenset({"core.errors", "core.limits", "core.sanitize"}),
     "core.redact": frozenset({"core.errors", "core.models"}),
     "core.fingerprint": frozenset(),
@@ -90,6 +90,9 @@ SAME_LAYER_ALLOWED: Mapping[str, frozenset[str]] = {
     ),
     "core.lines": frozenset(),
     "core.globs": frozenset({"core.errors", "core.limits", "core.sanitize"}),
+    "core.suppress": frozenset(
+        {"core.errors", "core.globs", "core.limits", "core.models", "core.rules"}
+    ),
     "core.findings": frozenset(
         {"core.detect.match", "core.fingerprint", "core.models", "core.redact"}
     ),

@@ -110,6 +110,16 @@ def sanitize(text: str, *, max_chars: int | None = None, ascii_only: bool = Fals
     return "".join(kept) + ELLIPSIS
 
 
+def is_display_safe(text: str) -> bool:
+    """True when `text` could have come out of `sanitize`: it holds no character that `sanitize`
+    would escape, apart from the backslash, which only occurs inside the escape sequences.
+
+    Models that are rendered verbatim use this to refuse a raw hostile string at construction,
+    so a renderer never has to guess whether a path was escaped already.
+    """
+    return all(char == "\\" or not _needs_escape(ord(char)) for char in text)
+
+
 def sanitize_bytes(data: bytes, *, max_chars: int | None = None, ascii_only: bool = False) -> str:
     """Sanitise bytes as UTF-8 with `surrogateescape`, so invalid bytes show as `\\udcNN`."""
     return sanitize(

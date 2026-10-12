@@ -185,3 +185,17 @@ def test_finding_and_report_construction() -> None:
     )
     assert report.history_complete is None
     assert models.Suppressions().entries == ()
+
+
+def test_display_text_must_be_escaped_at_construction() -> None:
+    from secret_scanner.core.models import IssueKind, ScanIssue
+
+    with pytest.raises(ValueError, match=r"Location\.path"):
+        Location(path_key="p", path="bad\nname", line=1, column=1, end_column=2)
+    with pytest.raises(ValueError, match="ScanIssue"):
+        ScanIssue(kind=IssueKind.UNREADABLE, path="bad" + chr(0x1B), detail="d")
+    with pytest.raises(ValueError, match="ScanIssue"):
+        ScanIssue(kind=IssueKind.UNREADABLE, path=None, detail="bad" + chr(0x1B))
+    assert ScanIssue(kind=IssueKind.UNREADABLE, path=None, detail="ok").path is None
+    escaped = Location(path_key="a\nb", path="a\\nb", line=1, column=1, end_column=2)
+    assert escaped.path == "a\\nb"

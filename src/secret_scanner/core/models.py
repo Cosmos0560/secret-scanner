@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from secret_scanner.core.regex_guard import GuardedPattern
+from secret_scanner.core.sanitize import is_display_safe
 
 _HEX = frozenset("0123456789abcdef")
 
@@ -147,6 +148,8 @@ class Location:
     def __post_init__(self) -> None:
         if self.line < 1 or self.column < 1 or self.end_column < self.column:
             raise ValueError("line and column are 1-based and end_column must not precede column")
+        if not is_display_safe(self.path):
+            raise ValueError("Location.path must be escaped for display (core/sanitize.py)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,6 +171,12 @@ class ScanIssue:
     kind: IssueKind
     path: str | None
     detail: str
+
+    def __post_init__(self) -> None:
+        if (self.path is not None and not is_display_safe(self.path)) or not is_display_safe(
+            self.detail
+        ):
+            raise ValueError("ScanIssue text must be escaped for display (core/sanitize.py)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,3 +226,7 @@ class Report:
     generated_at: str
     tool_version: str
     history_complete: bool | None = None  # git target only
+
+    def __post_init__(self) -> None:
+        if not is_display_safe(self.target_display):
+            raise ValueError("Report.target_display must be escaped for display")

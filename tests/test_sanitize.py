@@ -202,3 +202,16 @@ def test_exhaustive_sweep_over_every_code_point() -> None:
                     if _violations(c, ascii_only)
                 }
                 pytest.fail(f"sanitiser invariant broken for: {bad}")
+
+
+def test_is_display_safe_accepts_sanitised_output_and_refuses_raw_text() -> None:
+    from secret_scanner.core.sanitize import is_display_safe
+
+    hostile = "a" + chr(0x1B) + "[31m" + chr(0x202E) + "b\n" + chr(0xDCFF) + BACKSLASH + "c"
+    assert not is_display_safe(hostile)
+    assert is_display_safe(sanitize(hostile))
+    assert is_display_safe(sanitize(hostile, ascii_only=True))
+    assert is_display_safe("plain/path.txt")
+    assert is_display_safe("caf" + chr(0xE9) + "/" + chr(0x65E5))  # printable non-ASCII is fine
+    assert not is_display_safe(chr(0))
+    assert not is_display_safe("x" + chr(0x200B) + "y")
