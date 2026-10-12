@@ -22,7 +22,11 @@ from dataclasses import dataclass
 from secret_scanner.core.detect import prefilter
 from secret_scanner.core.detect.entropy import EntropyConfig, EntropyDetector
 from secret_scanner.core.detect.match import Match
-from secret_scanner.core.detect.private_key import HEADER_KEYWORD, PrivateKeyScanner
+from secret_scanner.core.detect.private_key import (
+    HEADER_KEYWORD,
+    PrivateKeyScanner,
+    compile_header_pattern,
+)
 from secret_scanner.core.detect.rule_detector import RuleDetector
 from secret_scanner.core.limits import DEFAULT_LIMITS, Limits
 from secret_scanner.core.lines import TextKind, prepare, split_lines
@@ -96,6 +100,7 @@ class Engine:
         self._rules = RuleDetector(rules, use_prefilter=use_prefilter)
         config = EntropyConfig() if entropy is None else entropy
         self._entropy = EntropyDetector(config, limits) if config.enabled else None
+        self._key_header = compile_header_pattern(limits)
 
     @property
     def entropy_enabled(self) -> bool:
@@ -112,7 +117,7 @@ class Engine:
         active = self._rules.active_for(lowered_file)
         entropy = self._entropy if use_entropy else None
         key_possible = HEADER_KEYWORD in lowered_file
-        keys = PrivateKeyScanner(self.limits)
+        keys = PrivateKeyScanner(self.limits, header=self._key_header)
         collected: list[Match] = []
         long_lines: list[int] = []
         cap = self.limits.max_findings_per_file

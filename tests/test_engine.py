@@ -464,3 +464,25 @@ def test_a_line_with_thousands_of_hits_is_resolved_and_capped() -> None:
     assert len(result.matches) == 50
     assert result.capped
     assert [m.col_start for m in result.matches] == [1 + n * (len(fake) + 1) for n in range(50)]
+
+
+def test_an_engine_compiles_the_key_header_pattern_once_not_per_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Parsing the pattern through the guard costs far more than scanning a small file; paying it
+    # per file made every scan (and the default gate under coverage) several times slower.
+    from secret_scanner.core.detect import private_key
+    from secret_scanner.core.regex_guard import compile_pattern as real
+
+    calls: list[str] = []
+
+    def counting(source: str, **kwargs: object) -> object:
+        calls.append(source)
+        return real(source, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(private_key, "compile_pattern", counting)
+    engine = Engine(ALL_RULES, entropy=EntropyConfig(enabled=False))
+    assert len(calls) == 1
+    for number in range(5):
+        engine.scan(f"line {number}\n".encode())
+    assert len(calls) == 1

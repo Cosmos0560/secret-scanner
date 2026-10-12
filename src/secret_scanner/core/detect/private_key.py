@@ -79,12 +79,23 @@ class _Block:
     body: bytearray = field(default_factory=bytearray)
 
 
+def compile_header_pattern(limits: Limits = DEFAULT_LIMITS) -> GuardedPattern:
+    """The guarded header pattern, for a caller that makes many scanners."""
+    return compile_pattern(_HEADER_PATTERN, limits=limits)
+
+
 class PrivateKeyScanner:
     """Incremental scanner: `feed` every line in order, then `finish`."""
 
-    def __init__(self, limits: Limits = DEFAULT_LIMITS) -> None:
+    def __init__(
+        self, limits: Limits = DEFAULT_LIMITS, *, header: GuardedPattern | None = None
+    ) -> None:
         self._max_lines = limits.max_key_lines
-        self._header: GuardedPattern = compile_pattern(_HEADER_PATTERN, limits=limits)
+        # An engine scans many files with one set of limits; it compiles the header pattern once
+        # and hands it in, instead of paying for the guard's parse on every file.
+        self._header: GuardedPattern = (
+            header if header is not None else compile_header_pattern(limits)
+        )
         self._block: _Block | None = None
         self.matches: list[Match] = []
 
