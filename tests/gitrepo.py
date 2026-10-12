@@ -1,0 +1,123 @@
+"""Throw-away git repositories for tests (PLAN.md D17).
+
+Argument lists only, never a shell. The environment is built from scratch: no user or system
+configuration, no hooks (`--template=` is empty and `core.hooksPath` points at the null device),
+no signing, no prompts. The commit identity is passed only through the subprocess environment of
+commands that run inside the temporary repository, and its address-like value is built at runtime
+from fragments, so no file contains an email address. Nothing is written to any git config file
+other than the repository's own, and no identity is ever written there.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+FIRST_COMMIT_EPOCH = 1_767_225_600  # 2026-01-01T00:00:00Z
+
+PINNED_CONFIG: tuple[tuple[str, str], ...] = (
+    ("core.hooksPath", os.devnull),
+    ("core.autocrlf", "false"),
+    ("core.fsmonitor", "false"),
+    ("commit.gpgsign", "false"),
+    ("tag.gpgsign", "false"),
+    ("protocol.allow", "never"),
+    ("gc.auto", "0"),
+)
+
+
+def git_binary() -> str:
+    """Absolute path of the git binary, or raise when there is none."""
+    found = shutil.which("git")
+    if found is None:
+        raise RuntimeError("git is not available")
+    return str(Path(found).resolve())
+
+
+def identity_email() -> str:
+    """An address-like value that exists in no file: built from fragments at runtime."""
+    return "demo" + "@" + "example" + "." + "invalid"
+
+
+def git_environment(home: Path, *, commit_index: int = 0) -> dict[str, str]:
+    """A from-scratch environment for git commands inside a throw-away repository."""
+    stamp = f"{FIRST_COMMIT_EPOCH + 60 * commit_index} +0000"
+    environment = {
+        "PATH": str(Path(git_binary()).parent),
+        "HOME": str(home),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_PAGER": "cat",
+        "PAGER": "cat",
+        "LC_ALL": "C",
+        "GIT_AUTHOR_NAME": "Demo Author",
+        "GIT_AUTHOR_EMAIL": identity_email(),
+        "GIT_COMMITTER_NAME": "Demo Author",
+        "GIT_COMMITTER_EMAIL": identity_email(),
+        "GIT_AUTHOR_DATE": stamp,
+        "GIT_COMMITTER_DATE": stamp,
+    }
+    if sys.platform == "win32":
+        environment["SYSTEMROOT"] = os.environ.get("SYSTEMROOT", r"C:\Windows")
+        environment["TEMP"] = str(home)
+        environment["TMP"] = str(home)
+    return environment
+
+
+def run_git(
+    cwd: Path, home: Path, *args: str, commit_index: int = 0, check: bool = True
+) -> subprocess.CompletedProcess[str]:
+    """Run one git command with the pinned configuration and the from-scratch environment."""
+    pinned: list[str] = []
+    for key, value in PINNED_CONFIG:
+        pinned += ["-c", f"{key}={value}"]
+    return subprocess.run(
+        [git_binary(), *pinned, *args],
+        cwd=cwd,
+        env=git_environment(home, commit_index=commit_index),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=check,
+        timeout=60,
+    )
+
+
+class GitRepo:
+    """A temporary repository. Files are staged by explicit path only."""
+
+    def __init__(self, path: Path, home: Path) -> None:
+        self.path = path
+        self.home = home
+        self.commits = 0
+
+    @classmethod
+    def create(cls, path: Path, home: Path) -> GitRepo:
+        path.mkdir(parents=True, exist_ok=True)
+        run_git(path, home, "init", "-q", "-b", "main", "--template=", str(path))
+        return cls(path, home)
+
+    def git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        return run_git(self.path, self.home, *args, commit_index=self.commits, check=check)
+
+    def write(self, relative: str, content: bytes | str) -> Path:
+        target = self.path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(content, str):
+            target.write_text(content, encoding="utf-8", newline="\n")
+        else:
+            target.write_bytes(content)
+        return target
+
+    def add(self, *relatives: str) -> None:
+        self.git("add", "--", *relatives)
+
+    def commit(self, message: str) -> str:
+        self.commits += 1
+        self.git("commit", "-q", "--no-verify", "-m", message)
+        return self.git("rev-parse", "HEAD").stdout.strip()

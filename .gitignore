@@ -1,0 +1,36 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# Tool caches and output
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+build/
+dist/
+
+# Local logs written by scripts/gate.py --log
+*.gate.log
+gate.log
+
+# Claude Code local state (the shared hook config .claude/settings.json is tracked)
+.claude/settings.local.json
+
+# Never track key material or environment files
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+.env*
+*.keystore
+*.jks

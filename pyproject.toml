@@ -1,0 +1,89 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "secret-scanner"
+dynamic = ["version"]
+description = "Defensive, offline, read-only secret scanner for directories and git history."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "secret-scanner authors" }]
+keywords = ["security", "secrets", "scanner", "defensive"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Typing :: Typed",
+]
+dependencies = ["PyYAML>=6.0.1"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "types-PyYAML>=6.0",
+]
+release = ["build", "pip-audit", "bandit"]
+
+[project.scripts]
+secret-scanner = "secret_scanner.cli.main:main"
+
+[tool.hatch.version]
+path = "src/secret_scanner/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/secret_scanner"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/secret_scanner", "README.md", "LICENSE", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = ["--strict-markers", "--strict-config"]
+filterwarnings = ["error"]
+markers = [
+    "slow: takes more than about a second; excluded from the default gate, run by --full and CI",
+    "requires_symlinks: needs symlink creation to work on this machine",
+    "requires_git: needs a git binary; a skip of this marker fails CI",
+    "posix_only: meaningful only on POSIX systems",
+    "windows_only: meaningful only on Windows",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["secret_scanner", "scripts"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "C4", "PT", "RUF", "N", "PIE", "TID"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["secret_scanner", "scripts", "tests"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src", "scripts", "tests"]
+mypy_path = ["src"]
+warn_unreachable = true
