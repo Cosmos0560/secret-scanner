@@ -127,8 +127,14 @@ def skip_reason(
     return None
 
 
-def git_missing_outcome(*, in_ci: bool) -> str:
-    """What a `requires_git` test does without git: fail in CI, skip elsewhere."""
+# Marker -> the program it needs. A missing one fails CI (a silent skip would hide the coverage
+# loss) and skips elsewhere.
+REQUIRED_TOOLS = {"requires_git": "git", "requires_sh": "sh"}
+
+
+def missing_tool_outcome(*, in_ci: bool) -> str:
+    """What a `requires_git` / `requires_sh` test does without its tool: fail in CI, skip
+    elsewhere."""
     return "fail" if in_ci else "skip"
 
 
@@ -146,8 +152,9 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     reason = skip_reason(names, platform=sys.platform, have_symlinks=_have_symlinks)
     if reason is not None:
         pytest.skip(reason)
-    if "requires_git" in names and shutil.which("git") is None:
-        message = "requires_git: no git binary on PATH"
-        if git_missing_outcome(in_ci=bool(os.environ.get("CI"))) == "fail":
-            pytest.fail(message + " (a skipped requires_git test fails CI)", pytrace=False)
-        pytest.skip(message)
+    for marker, tool in REQUIRED_TOOLS.items():
+        if marker in names and shutil.which(tool) is None:
+            message = f"{marker}: no {tool} binary on PATH"
+            if missing_tool_outcome(in_ci=bool(os.environ.get("CI"))) == "fail":
+                pytest.fail(message + f" (a skipped {marker} test fails CI)", pytrace=False)
+            pytest.skip(message)

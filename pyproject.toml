@@ -57,6 +57,7 @@ markers = [
     "slow: takes more than about a second; excluded from the default gate, run by --full and CI",
     "requires_symlinks: needs symlink creation to work on this machine",
     "requires_git: needs a git binary; a skip of this marker fails CI",
+    "requires_sh: needs a POSIX sh on PATH (Git Bash on Windows); a skip of this marker fails CI",
     "posix_only: meaningful only on POSIX systems",
     "windows_only: meaningful only on Windows",
 ]

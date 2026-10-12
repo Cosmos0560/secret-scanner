@@ -119,9 +119,27 @@ Gate rules:
   a redirect, `|| true`, `; true`, `; exit 0` or a filter (tail, head, tee, grep, findstr,
   Select-String, Out-File, Tee-Object, Out-Null and kin). Run other commands separately.
 - The same hook also enforces the machine rules (PLAN.md D20 option b): it blocks `git push`,
-  `git tag`, `git add -A` / `git add --all` / `git add .`, `git config user.*`, and any commit
+  `git tag` (entirely, listing included), `git add -A` / `git add --all` / `git add .`,
+  `git config user.*`, `git commit -a` / `--all`, `git commit --author` (also abbreviated),
+  any git command with `-c user.*`, `--config user.*` or `--config-env user.*`, a commit-like
+  command with `GIT_AUTHOR_*` / `GIT_COMMITTER_*` assignments in front of it, and any commit
   command whose message contains a `Co-Authored-By` trailer. Quoted text is treated as data, not
   as a command. Input the hook cannot parse is a non-blocking error.
+- Hook launcher. `.claude/settings.json` runs `sh "$CLAUDE_PROJECT_DIR/scripts/hooks/run_guard.sh"`,
+  not the venv interpreter. A missing interpreter exits with a code Claude Code treats as a
+  non-blocking error (127), which would silently allow everything, so the guard must not depend on
+  the venv, and it must block, not fail open, when it has no interpreter. The hook is standard
+  library only, so any Python 3.10+ will do. The launcher tries, in order, `py -3` (the Windows
+  launcher, present with a python.org install and independent of any venv), `python3`, `python`,
+  then `.venv/Scripts/python.exe` and `.venv/bin/python`, and uses the first one that passes a
+  version probe (a Microsoft Store stub or a too-old Python fails the probe and is skipped). If
+  none works, it exits 2 with a message: every Bash and PowerShell command is then refused until a
+  Python exists (install one, or `uv venv --python 3.13 .venv`). It uses only POSIX `sh`
+  builtins. Residual risk, accepted: if `sh` itself cannot start (Git Bash missing on Windows),
+  Claude Code reports a non-blocking hook error and the guard is not in force; `requires_sh`
+  tests in `tests/test_hook_launcher.py` fail CI when `sh` is absent there, so the launcher is
+  never silently untested. An uncaught crash inside `guard_gate.py` also exits 1 (non-blocking);
+  the hook is written to be total and is tested on malformed and hostile input.
 - Gate steps, in order: `ruff check`, `ruff format --check`, `mypy --platform linux`,
   `mypy --platform win32`, `scripts/check_architecture.py`, `pytest` with branch coverage
   `--cov-fail-under=85`. The gate runs every step, prints a summary, exits non-zero if any failed.
@@ -254,8 +272,8 @@ marker with a reason.
   get `@pytest.mark.slow`. The default gate excludes them; `--full` and CI run them. Target: the
   default gate under 60 s on this machine; if it exceeds 90 s, move tests to `slow` first.
 - Skips only through named markers with a reason (`requires_symlinks`, `requires_git`,
-  `posix_only`, `windows_only`). CI runs pytest with `-rs`, and a test fails CI if a
-  `requires_git` test was skipped there.
+  `requires_sh`, `posix_only`, `windows_only`). CI runs pytest with `-rs`, and a test fails CI if
+  a `requires_git` or `requires_sh` test was skipped there.
 - Repository hygiene tests (from Phase 1, on tracked and untracked-not-ignored files):
   - no bidi controls, zero-width characters, BOM, or control characters other than `\n`, `\r`,
     `\t`; test data writes such characters as escapes (`"\u202e"`), never raw;

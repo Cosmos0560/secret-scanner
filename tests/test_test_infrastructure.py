@@ -118,9 +118,10 @@ def test_every_skip_reason_names_its_marker() -> None:
         assert text.startswith(name)
 
 
-def test_missing_git_fails_in_ci_and_skips_elsewhere() -> None:
-    assert conftest.git_missing_outcome(in_ci=True) == "fail"
-    assert conftest.git_missing_outcome(in_ci=False) == "skip"
+def test_missing_tool_fails_in_ci_and_skips_elsewhere() -> None:
+    assert conftest.missing_tool_outcome(in_ci=True) == "fail"
+    assert conftest.missing_tool_outcome(in_ci=False) == "skip"
+    assert conftest.REQUIRED_TOOLS == {"requires_git": "git", "requires_sh": "sh"}
 
 
 def test_symlink_probe_returns_a_bool() -> None:
@@ -129,7 +130,15 @@ def test_symlink_probe_returns_a_bool() -> None:
 
 def test_registered_markers_match_the_documented_names() -> None:
     text = (Path(__file__).resolve().parent.parent / "pyproject.toml").read_text(encoding="utf-8")
-    for name in ("slow", "requires_symlinks", "requires_git", "posix_only", "windows_only"):
+    names = (
+        "slow",
+        "requires_symlinks",
+        "requires_git",
+        "requires_sh",
+        "posix_only",
+        "windows_only",
+    )
+    for name in names:
         assert f'"{name}:' in text
 
 

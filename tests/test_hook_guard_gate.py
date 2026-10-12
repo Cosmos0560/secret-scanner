@@ -506,6 +506,6 @@ def test_settings_json_registers_the_hook_for_bash_and_powershell() -> None:
     assert entries[0]["matcher"] == "Bash|PowerShell"
     commands = [hook["command"] for hook in entries[0]["hooks"]]
     assert len(commands) == 1
-    assert "scripts/hooks/guard_gate.py" in commands[0]
-    assert ".venv" in commands[0]
+    assert "scripts/hooks/run_guard.sh" in commands[0]
+    assert (PROJECT_ROOT / "scripts" / "hooks" / "run_guard.sh").is_file()
     assert (PROJECT_ROOT / "scripts" / "hooks" / "guard_gate.py").is_file()
