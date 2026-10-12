@@ -143,6 +143,7 @@ SAME_LAYER_ALLOWED: Mapping[str, frozenset[str]] = {
         }
     ),
     "services.loader": frozenset(),
+    "services.config": frozenset({"services.loader"}),
     "cli.main": frozenset(),
 }
 

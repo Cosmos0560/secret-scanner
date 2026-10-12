@@ -96,6 +96,15 @@ def parse_yaml(data: bytes, *, max_bytes: int, what: str = "YAML file") -> objec
             loader.dispose()
 
 
+def dump_yaml(data: object) -> str:
+    """Serialise plain data as YAML text: keys in the order given, block style, ASCII only (a
+    non-ASCII character becomes an escape), so the result can be written anywhere and read back
+    by `parse_yaml` to the same data."""
+    return yaml.safe_dump(
+        data, sort_keys=False, default_flow_style=False, allow_unicode=False, width=100
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class RuleSet:
     """Validated rules and the SHA-256 of the file they came from (the "rules version")."""
