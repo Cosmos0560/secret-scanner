@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import errno
 import os
+import stat
 import subprocess
 import sys
 import types
@@ -14,7 +15,11 @@ from pathlib import Path
 
 import pytest
 
-from secret_scanner.core.entries import FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS, EntryKind
+from secret_scanner.core.entries import (
+    FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS,
+    EntryKind,
+    classify_stat,
+)
 from secret_scanner.core.errors import UsageError
 from secret_scanner.core.globs import compile_globs
 from secret_scanner.core.limits import DEFAULT_LIMITS, Limits
@@ -589,3 +594,43 @@ def test_default_excluded_directories_match_the_plan() -> None:
         )
         == DEFAULT_EXCLUDED_DIRECTORIES
     )
+
+
+def _stat(mode: int, inode: int, device: int) -> os.stat_result:
+    return os.stat_result((mode, inode, device, 1, 0, 0, 0, 0, 0, 0))
+
+
+def test_identity_decision_table() -> None:
+    regular = stat.S_IFREG | 0o644
+    directory = stat.S_IFDIR | 0o755
+    assert walk._same_file(_stat(regular, 5, 1), _stat(regular, 5, 1))
+    assert not walk._same_file(_stat(regular, 6, 1), _stat(regular, 5, 1))  # another file
+    assert not walk._same_file(_stat(regular, 5, 2), _stat(regular, 5, 1))  # another volume
+    assert not walk._same_file(_stat(directory, 5, 1), _stat(regular, 5, 1))  # not a file now
+    # a file system that reports no identity cannot be compared; the type check still applies
+    assert walk._same_file(_stat(regular, 0, 0), _stat(regular, 5, 1))
+    assert not walk._same_file(_stat(directory, 0, 0), _stat(regular, 5, 1))
+
+
+def test_special_files_are_recorded_and_not_opened(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    make_tree(root, {"device.node": "x", "plain.txt": "y"})
+    opened: list[str] = []
+
+    def reader(path: str, info: os.stat_result, maximum: int) -> bytes | ReadFailure:
+        opened.append(Path(path).name)
+        return read_regular_file(path, info, maximum)
+
+    real = classify_stat
+    seen: list[os.stat_result] = []
+
+    def classify(info: os.stat_result, *, windows: bool) -> EntryKind:
+        seen.append(info)
+        # entries come sorted: the first one examined is device.node
+        return EntryKind.SPECIAL if len(seen) == 1 else real(info, windows=windows)
+
+    monkeypatch.setattr(walk, "classify_stat", classify)
+    events, _ = run(root, reader=reader)
+    assert skipped(events) == {"device.node": SkipReason.SPECIAL}
+    assert opened == ["plain.txt"]

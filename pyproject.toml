@@ -60,6 +60,7 @@ markers = [
     "requires_sh: needs a POSIX sh on PATH (Git Bash on Windows); a skip of this marker fails CI",
     "posix_only: meaningful only on POSIX systems",
     "windows_only: meaningful only on Windows",
+    "reads_repository: reads this repository on purpose; exempt from the temporary-path guard",
 ]
 
 [tool.coverage.run]

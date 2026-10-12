@@ -137,9 +137,61 @@ def test_registered_markers_match_the_documented_names() -> None:
         "requires_sh",
         "posix_only",
         "windows_only",
+        "reads_repository",
     )
     for name in names:
         assert f'"{name}:' in text
+
+
+# -- the temporary-path guard (CLAUDE.md section 7) ---------------------------------------
+
+
+def test_the_guard_refuses_a_path_outside_the_temporary_base() -> None:
+    from secret_scanner.fs import safe_files, walk
+
+    outside = str(Path(__file__).resolve().parent)  # this repository's tests directory
+    with pytest.raises(pytest.fail.Exception, match="outside the test temporary directory"):
+        walk.check_scan_root(outside)
+    with pytest.raises(pytest.fail.Exception, match="outside the test temporary directory"):
+        safe_files.read_own_file(str(Path(__file__).resolve()), 100, "file")
+    with pytest.raises(pytest.fail.Exception, match="outside the test temporary directory"):
+        safe_files.write_new_file(str(Path(__file__).resolve().parent / "x.out"), b"x")
+    with pytest.raises(pytest.fail.Exception, match="outside the test temporary directory"):
+        safe_files.is_inside(str(Path(__file__).resolve().parent), str(tmp_inside()))
+    with pytest.raises(pytest.fail.Exception, match="outside"):
+        list(walk.walk_tree(root=outside, options=walk.WalkOptions(), counters=walk.WalkCounters()))
+    assert not (Path(outside) / "x.out").exists()
+
+
+def tmp_inside() -> Path:
+    return Path(os.environ["HOME"]) / "inside"  # isolated-home lives under the temporary base
+
+
+def test_the_guard_allows_paths_inside_the_temporary_base(tmp_path: Path) -> None:
+    from secret_scanner.fs import safe_files, walk
+
+    walk.check_scan_root(str(tmp_path))
+    assert not safe_files.is_inside(str(tmp_path), str(tmp_path.parent / "elsewhere"))
+    safe_files.write_new_file(str(tmp_path / "ok.txt"), b"x")
+
+
+@pytest.mark.reads_repository
+def test_the_marker_exempts_a_test_that_reads_the_repository() -> None:
+    from secret_scanner.fs import walk
+
+    walk.check_scan_root(str(Path(__file__).resolve().parent))
+
+
+def test_the_guard_does_not_change_what_the_functions_do(tmp_path: Path) -> None:
+    from secret_scanner.fs import walk
+
+    assert hasattr(walk.walk_tree, "__wrapped__")
+    assert walk.walk_tree.__name__ == "walk_tree"
+    (tmp_path / "a.txt").write_text("x", encoding="utf-8")
+    events = list(walk.walk_tree(str(tmp_path), walk.WalkOptions(), walk.WalkCounters()))
+    assert [type(event).__name__ for event in events if type(event).__name__ == "FileContent"] == [
+        "FileContent"
+    ]
 
 
 # -- throw-away repositories (D17) ----------------------------------------------------------

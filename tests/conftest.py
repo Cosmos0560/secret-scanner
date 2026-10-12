@@ -3,16 +3,21 @@ skip markers (CLAUDE.md section 7)."""
 
 from __future__ import annotations
 
+import functools
+import importlib
+import inspect
 import os
 import shutil
 import socket
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from secret_scanner.core.redact import redact_secret
+from secret_scanner.core.sanitize import sanitize
 
 ISOLATED_ENVIRONMENT = ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME")
 MIN_LEAK_RUN = 8
@@ -55,6 +60,82 @@ def _no_network(monkeypatch: pytest.MonkeyPatch) -> None:
         "socketpair",
     ):
         monkeypatch.setattr(socket, name, _blocked)
+
+
+# -- the path guard (CLAUDE.md section 7) ---------------------------------------------------
+#
+# The public functions of the modules that touch the file system are wrapped once per session.
+# A test that hands one of them a path outside pytest's temporary base fails, so no test can
+# read or write the real home directory, the repository or anything else by accident. Tests that
+# read this repository on purpose carry the `reads_repository` marker.
+
+GUARDED_FUNCTIONS: dict[str, dict[str, tuple[str, ...]]] = {
+    "secret_scanner.fs.walk": {
+        "walk_tree": ("root",),
+        "check_scan_root": ("root",),
+        "read_regular_file": ("path",),
+    },
+    "secret_scanner.fs.safe_files": {
+        "read_own_file": ("path",),
+        "write_new_file": ("path",),
+        "is_inside": ("root", "candidate"),
+    },
+}
+
+
+class PathGuardState:
+    """Where the guard currently allows paths. `base` is None before the first test."""
+
+    base: str | None = None
+    allow_repository = False
+
+
+def require_inside_base(value: object, who: str) -> None:
+    """Fail the running test when `value` is a path outside the temporary base."""
+    base = PathGuardState.base
+    if base is None or PathGuardState.allow_repository or not isinstance(value, str | os.PathLike):
+        return
+    resolved = os.path.normcase(os.path.realpath(value))
+    if resolved != base and not resolved.startswith(base + os.sep):
+        shown = sanitize(os.fspath(value), max_chars=120)
+        pytest.fail(f"{who} was given a path outside the test temporary directory: {shown}")
+
+
+def _guard(function: Callable[..., Any], parameters: tuple[str, ...]) -> Callable[..., Any]:
+    signature = inspect.signature(function)
+
+    @functools.wraps(function)
+    def guarded(*args: Any, **kwargs: Any) -> Any:
+        bound = signature.bind_partial(*args, **kwargs)
+        for name in parameters:
+            if name in bound.arguments:
+                require_inside_base(bound.arguments[name], function.__qualname__)
+        return function(*args, **kwargs)
+
+    return guarded
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    for module_name, functions in GUARDED_FUNCTIONS.items():
+        module = importlib.import_module(module_name)
+        for name, parameters in functions.items():
+            function = getattr(module, name)
+            if not getattr(function, "__wrapped__", None):  # wrap once
+                setattr(module, name, _guard(function, parameters))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _path_guard_base(tmp_path_factory: pytest.TempPathFactory) -> None:
+    PathGuardState.base = os.path.normcase(os.path.realpath(tmp_path_factory.getbasetemp()))
+
+
+@pytest.fixture(autouse=True)
+def _path_guard_marker(request: pytest.FixtureRequest) -> Any:
+    PathGuardState.allow_repository = (
+        request.node.get_closest_marker("reads_repository") is not None
+    )
+    yield
+    PathGuardState.allow_repository = False
 
 
 def leak_check(
