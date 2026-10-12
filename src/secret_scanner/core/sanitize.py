@@ -88,7 +88,7 @@ def sanitize(text: str, *, max_chars: int | None = None, ascii_only: bool = Fals
         return "".join(_render(char, ascii_only) for char in text)
     if max_chars < len(ELLIPSIS):
         raise ValueError("max_chars is smaller than the truncation marker")
-    # Render at most max_chars + 1 characters' worth: enough to know whether the text fits.
+    # Stop at the first piece that does not fit, so a huge input costs at most max_chars of work.
     pieces: list[str] = []
     used = 0
     for char in text:

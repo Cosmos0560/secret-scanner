@@ -159,18 +159,46 @@ def test_literal_escape_looking_text_is_distinguishable() -> None:
     assert sanitize(typed) != sanitize(chr(0x202E))
 
 
+def _violations(char: str, ascii_only: bool) -> list[str]:
+    """What is wrong with the sanitised form of one character (empty list: nothing)."""
+    result = sanitize(char, ascii_only=ascii_only)
+    problems: list[str] = []
+    if unescape(result) != char:
+        problems.append("does not round-trip")
+    if ascii_only:
+        if not all(0x20 <= ord(c) < 0x7F for c in result):
+            problems.append("not printable ASCII")
+    else:
+        for c in result:
+            category = unicodedata.category(c)
+            if category[0] == "C" or category in {"Zl", "Zp"} or (c != " " and category == "Zs"):
+                problems.append("a control, format or separator character survived")
+    return problems
+
+
 @pytest.mark.slow
 def test_exhaustive_sweep_over_every_code_point() -> None:
-    for code_point in range(0x110000):
-        char = chr(code_point)
+    """Every code point, checked in chunks (the escaping is context-free); on a failure the
+    offending chunk is re-checked character by character so the report names the code point."""
+    chunk_size = 4096
+    for start in range(0, 0x110000, chunk_size):
+        chunk = "".join(chr(code) for code in range(start, min(start + chunk_size, 0x110000)))
         for ascii_only in (False, True):
-            result = sanitize(char, ascii_only=ascii_only)
-            assert unescape(result) == char, hex(code_point)
+            result = sanitize(chunk, ascii_only=ascii_only)
+            ok = unescape(result) == chunk
             if ascii_only:
-                assert all(0x20 <= ord(c) < 0x7F for c in result), hex(code_point)
+                ok = ok and all(0x20 <= ord(c) < 0x7F for c in result)
             else:
-                for c in result:
-                    category = unicodedata.category(c)
-                    assert category[0] != "C", hex(code_point)
-                    assert category not in {"Zl", "Zp"}, hex(code_point)
-                    assert c == " " or category != "Zs", hex(code_point)
+                ok = ok and not any(
+                    unicodedata.category(c)[0] == "C"
+                    or unicodedata.category(c) in {"Zl", "Zp"}
+                    or (c != " " and unicodedata.category(c) == "Zs")
+                    for c in result
+                )
+            if not ok:
+                bad = {
+                    hex(ord(c)): _violations(c, ascii_only)
+                    for c in chunk
+                    if _violations(c, ascii_only)
+                }
+                pytest.fail(f"sanitiser invariant broken for: {bad}")
