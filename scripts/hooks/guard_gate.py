@@ -6,9 +6,12 @@ Reads the hook payload (JSON) on stdin and blocks, with exit code 2 and a reason
 * any command that runs `scripts/gate.py` together with a pipe, a redirect, `|| ...`, `; true`,
   `; exit 0` or a filter (tail, head, tee, grep, findstr, Select-String, Out-File, Tee-Object,
   Out-Null and kin): the gate's exit status and output must never be filtered or masked;
-* `git push`, `git tag`, `git add -A` / `--all` / `.`, `git config user.*`, and a commit command
-  whose message contains a `Co-Authored-By` trailer (PLAN.md D20 option b: the machine rules are
-  enforced by the tool, not only by memory).
+* `git push`, `git tag`, `git add -A` / `--all` / `.`, `git config user.*`, `git commit -a` /
+  `--all`, `git commit --author`, any git command that sets `user.*` configuration on the command
+  line (`-c user.x=..`, `--config user.x=..`, `--config-env`), `GIT_AUTHOR_*` / `GIT_COMMITTER_*`
+  assignments in front of a commit, and a commit command whose message contains a
+  `Co-Authored-By` trailer (PLAN.md D20 option b: the machine rules are enforced by the tool, not
+  only by memory).
 
 Quoted text is data, not a command: `echo "git push"` is allowed. Input the hook cannot parse
 exits 1, a non-blocking error: the hook must never wedge a session. Standard library only.
@@ -91,6 +94,27 @@ _COMMIT_LIKE = frozenset(
     {"commit", "commit-tree", "merge", "rebase", "revert", "cherry-pick", "am", "notes"}
 )
 _ADD_EVERYTHING_PATHSPECS = frozenset({".", "./", ".\\", ":/", "*"})
+# `git commit` options that take a value; in a cluster of short flags the rest of the word is the
+# value (`-mfoo`), or the next word when nothing follows (`-am msg`).
+_COMMIT_SHORT_WITH_VALUE = frozenset("mFCct")
+_COMMIT_SHORT_WITH_OPTIONAL_VALUE = frozenset("uS")  # value only attached (`-uno`)
+_COMMIT_LONG_WITH_VALUE = (
+    "message",
+    "file",
+    "reuse-message",
+    "reedit-message",
+    "template",
+    "author",
+    "date",
+    "cleanup",
+    "fixup",
+    "squash",
+    "pathspec-from-file",
+    "trailer",
+)
+_COMMIT_ALL = "`git commit -a` / `--all`: stage files by explicit path only"
+_COMMIT_AUTHOR = "`git commit --author`: the git identity is never touched"
+_IDENTITY_ENVIRONMENT = re.compile(r"^GIT_(?:AUTHOR|COMMITTER)_[A-Z]+=", re.IGNORECASE)
 
 
 @dataclass(slots=True)
@@ -532,6 +556,66 @@ def _add_everything(arguments: Sequence[str]) -> bool:
     return False
 
 
+def _is_option_prefix(name: str, full: str, minimum: int) -> bool:
+    """git accepts any unambiguous prefix of a long option; ambiguous ones are errors there, so
+    matching every prefix of at least `minimum` characters can only over-block."""
+    return len(name) >= minimum and full.startswith(name)
+
+
+def _commit_option_reasons(arguments: Sequence[str]) -> list[str]:
+    """`-a` / `--all` and `--author` among the arguments of `git commit`, reading option values
+    as values (so `-m -a` and `--message=--all` are messages, not flags)."""
+    reasons: list[str] = []
+    index = 0
+    while index < len(arguments):
+        word = arguments[index]
+        index += 1
+        if word == "--":
+            break
+        if word.startswith("--"):
+            name, has_value, _ = word[2:].partition("=")
+            if name == "all":
+                reasons.append(_COMMIT_ALL)
+            elif _is_option_prefix(name, "author", 2):
+                reasons.append(_COMMIT_AUTHOR)
+            if not has_value and any(
+                _is_option_prefix(name, option, 2) for option in _COMMIT_LONG_WITH_VALUE
+            ):
+                index += 1
+        elif word.startswith("-") and len(word) > 1:
+            for position, char in enumerate(word[1:], start=1):
+                if char == "a":
+                    reasons.append(_COMMIT_ALL)
+                elif char in _COMMIT_SHORT_WITH_VALUE:
+                    if position == len(word) - 1:
+                        index += 1
+                    break
+                elif char in _COMMIT_SHORT_WITH_OPTIONAL_VALUE:
+                    break
+    return reasons
+
+
+def _sets_user_config(words: Sequence[str]) -> bool:
+    """True when `-c`, `--config` or `--config-env` (global option, or `git clone --config`) is
+    given a key under `user.`: the identity of this repository is never set from the command."""
+    for position, word in enumerate(words):
+        lowered = word.lower()
+        following = words[position + 1].lower() if position + 1 < len(words) else ""
+        if lowered.startswith("--"):
+            name, has_value, value = lowered[2:].partition("=")
+            if not (
+                _is_option_prefix(name, "config", 3) or _is_option_prefix(name, "config-env", 7)
+            ):
+                continue
+            if (value if has_value else following).startswith("user."):
+                return True
+        elif lowered.startswith("-c") and (
+            lowered[2:].startswith("user.") or (lowered == "-c" and following.startswith("user."))
+        ):
+            return True
+    return False
+
+
 def _message_files(arguments: Sequence[str], cwd: Path | None) -> list[str]:
     """Texts of files given with -F/--file (best effort, bounded, never raises)."""
     paths: list[str] = []
@@ -562,6 +646,14 @@ def _git_reasons(parsed: _Parsed, raw_command: str, cwd: Path | None) -> list[st
         if index is None or _program_name(segment.words[index]) != "git":
             continue
         subcommand, arguments = _git_subcommand(segment.words[index + 1 :])
+        if _sets_user_config(segment.words[index + 1 :]):
+            reasons.append("`-c user.*` / `--config user.*`: the git identity is never touched")
+        if subcommand in _COMMIT_LIKE and any(
+            _IDENTITY_ENVIRONMENT.match(word) for word in segment.words[:index]
+        ):
+            reasons.append("`GIT_AUTHOR_*` / `GIT_COMMITTER_*`: the git identity is never touched")
+        if subcommand == "commit":
+            reasons.extend(_commit_option_reasons(arguments))
         if subcommand == "push":
             reasons.append("`git push`: pushing is done by the owner")
         elif subcommand == "tag":
