@@ -834,3 +834,15 @@ phase report written. Tagging and pushing are yours.
   the type-walk test "no renderable model can hold a secret" was written in Phase 1, not Phase 2.
 - v0.4 (2026-10-12): Phase 2 follow-ups from the owner: the author placeholder is replaced by the
   owner's name in `pyproject.toml` and LICENSE (v0.3 deviation 6 resolved).
+- v0.5 (2026-10-12): Phase 2 deviations and interpretations, awaiting acceptance (details in
+  docs/phase-reports.md): `Rule`, `FakeSegment` and `Checksum` are in `core/models.py` (resolves
+  v0.3 deviation 1); rule `context` is a list of 1 to 4 lower-case keywords that must all appear
+  on the line; the `fake` spec is a list of segments and is the full matched text; the regex
+  guard adds the rule that two adjacent variable-width items must not match the same byte, and
+  defines cost as maximum width times alternation paths (D3's formula when no group holds an
+  alternation), compiles byte patterns and refuses anchors; the entropy detector treats `=` as
+  padding only at the end of a token, derives the hex minimum as the larger of 32 and the
+  configured minimum, and enforces the 64-bit floor of D7 at run time; a key block that reaches
+  `MAX_KEY_LINES` is reported at confidence medium; `Match` carries severity and shown
+  characters; the test marker `requires_sh` and the hook launcher `scripts/hooks/run_guard.sh`
+  (Phase 1 follow-up) are not in the plan.

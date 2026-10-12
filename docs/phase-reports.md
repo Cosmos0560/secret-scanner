@@ -5,8 +5,9 @@ CLAUDE.md section 2, step 5. The last entry is the one a new session reads first
 
 ## In progress
 
-Nothing. Phase 1 is complete; Phase 2 (detection engine) has not started. CI has not run yet: the
-owner adds the remote, pushes, and reports the Actions result.
+Nothing. Phases 1 and 2 are complete; Phase 3 (directory scan, suppression, `scan` with table and
+JSON) has not started. Phase 1 was reported green on all six CI jobs by the owner; the Phase 2
+code has not run in CI yet (Python 3.11 and 3.12 were only syntax-parsed locally).
 
 ## Phase 1 - Foundation, gate, hook, CI, pure core (2026-10-12)
 
@@ -54,4 +55,120 @@ Tests added: 702 (701 in the default gate, 1 slow): hook 199, architecture check
 Real coverage: 100.00% (branch, src/secret_scanner and scripts) in the full gate on Windows and in the full gate on WSL Ubuntu; floor 85
 Known gaps: CI not yet run (workflow is only parsed by tests; action versions cannot be checked offline); Python 3.11 and 3.12 not run locally (CI matrix covers them); hook is a text analysis and cannot see aliases, variables, -EncodedCommand or scripts, does not block git commit -a, -c user.* or --author (not in D20 b), and fails open if the venv interpreter it names is missing; architecture checker's same-layer table lists only Phase 1 modules and must be extended by each phase; hygiene uses the minimal format set until Phase 2 switches it to the engine; sanitize with max_chars=None is unbounded, callers must pass a bound for untrusted input; full gate takes 68 s because of the exhaustive sweep; author name is a placeholder
 Deviations from PLAN.md: Rule not yet in core/models.py (needs Phase 2 regex_guard); ScanStats skip counters are flat fields; Limits overrides are lower-only with ceilings as a separate bound; checker enforces core purity and the sys.platform guard rule; coverage also covers scripts; placeholder authors/LICENSE holder; type-walk test written in Phase 1 (all marked awaiting acceptance in the PLAN.md changelog)
+```
+
+## Phase 2 - Detection engine (2026-10-12)
+
+### Step 0 - Phase 1 follow-ups (own commits, each through the gate)
+
+- (a) Author: `pyproject.toml` and `LICENSE` now name the owner (copyright 2026). No test pinned
+  the placeholder.
+- (b) Hook gaps closed in `scripts/hooks/guard_gate.py`: `git commit -a` / `--all` (also inside
+  short-flag clusters such as `-am`, with option values read as values, so `-m -a` is a message),
+  `git commit --author` (also abbreviated, as git accepts unambiguous prefixes), any git command
+  with `-c user.*`, `--config user.*` or `--config-env user.*`, and (a small addition, because
+  CLAUDE.md section 1 names them) `GIT_AUTHOR_*` / `GIT_COMMITTER_*` assignments in front of a
+  commit-like command. `git tag` stays blocked entirely. Planted violations and allowed
+  counterexamples for each family are in `tests/test_hook_guard_gate.py`; the live hook was seen
+  blocking `git commit -a` in this session.
+- (c) Hook robustness: `.claude/settings.json` now runs
+  `sh "$CLAUDE_PROJECT_DIR/scripts/hooks/run_guard.sh"`. The launcher tries `py -3`, `python3`,
+  `python`, then the venv interpreters, uses the first that passes a version probe (skipping a
+  Microsoft Store stub or a Python older than 3.10), and **exits 2 with a message when none
+  runs**, so a missing interpreter blocks instead of silently allowing everything (exit 127 is a
+  non-blocking error in Claude Code's hook protocol). The choice is explained in CLAUDE.md
+  section 3. Tested with the real launcher, a copy in a tree with no `.venv`, a copy with no
+  interpreter at all, and stand-in interpreters (`requires_sh` marker, which fails CI when `sh`
+  is missing there). Residual risk: if `sh` itself cannot start, the guard is not in force
+  (documented).
+- (d) No file named `file` exists, is tracked, or ever existed in the history of any ref
+  (`git log --all --name-only`). I cannot tell what produced that entry in the earlier edit list
+  (nothing in this repository did); no action was needed.
+
+### Measured on this machine (Windows 11, Python 3.13.14, git 2.54.0.windows.1)
+
+- Default gate (`python scripts/gate.py`): 56 s to 60 s in total (pytest 52 s to 56 s), 1417
+  tests (17 `slow` deselected), 100.00% branch coverage. It was 17 s to 20 s at the end of
+  Phase 1; the growth is the per-rule table (150 tests) and the guard's grammar table (166). The
+  CLAUDE.md target is under 60 s, so this is at the target.
+- Full gate (`python scripts/gate.py --full`): 140 s in total, 1434 tests, 100.00%. The slow tests
+  take about 80 s under coverage tracing, about 50 s of it the Phase 1 code-point sweep.
+- WSL Ubuntu (Python 3.14.4, outside the CI matrix as CLAUDE.md allows): full gate 13 s in total,
+  1434 tests, 100.00%, run on the committed code.
+- Python 3.11 and 3.12 interpreters exist locally but CLAUDE.md allows no further venv, so only a
+  read-only syntax parse of `src`, `tests` and `scripts` was done with them (no errors). The CI
+  matrix is the real check.
+- ReDoS tripwire (`slow`): every rule, the entropy detector and the private key scanner over
+  adversarial lines of 256 KiB (runs of the charset, repeated near misses, alternating near
+  misses, repeated whole fakes, printable ASCII, a secret at the end of a maximum-length line):
+  at most 0.15 s per line for the whole engine, against a ceiling of 20 s.
+
+### What the tripwire and the tests found (bugs fixed in this phase)
+
+1. The first tripwire run took 12 s for one 256 KiB line: columns were recomputed from the start
+   of the line for every match (quadratic), overlap resolution compared every hit with every
+   other, and the entropy context lookup scanned all key ends per token. Fixed with a
+   `ColumnCursor`, a bisect-based interval check and a nearest-key lookup; a randomized test
+   compares the resolution with a naive reference.
+2. A control character in a YAML file escaped as an uncaught `ReaderError` raised in the loader's
+   constructor; it is now a `ConfigError` with a position and no content.
+3. A rule with a checksum and a too-short fake raised `ValueError`; it is now a `ConfigError`.
+4. Disabling the keyword pre-filter also disabled the rule's context words, so the result was
+   not identical with the filter off; the context is now enforced always (the consistency test
+   caught it).
+5. `AccountKey=` and `hooks.slack.com` had no left boundary (a glued prefix still matched); both
+   have one now.
+6. `API_KEY=value` was one token because `=` is in D5's alphabet, so env-style lines never got
+   context; `=` is now padding only at the end of a token.
+7. A secret group wrapped in a quantified non-capturing group was accepted by the first guard
+   draft; it is refused.
+
+### Deviations and interpretations (also in the PLAN.md changelog v0.5, awaiting acceptance)
+
+1. `Rule`, `FakeSegment` and `Checksum` are in `core/models.py` (resolves v0.3 deviation 1).
+2. `context` is a list of 1 to 4 lower-case keywords that must all appear on the line (D4 says "a
+   keyword"); `aws-secret-access-key` uses `[aws, secret]`, which is what D4's table describes.
+3. The `fake` spec is a list of segments (`parts` joined at runtime, or `charset` + `length`),
+   because multi-segment formats (GitHub fine-grained, Slack, SendGrid) need more than one prefix
+   and body. The fake is the full matched text, so it may include a non-secret prefix
+   (`AccountKey=`, `hooks.slack.com/services/`); the loader checks that it matches its own rule.
+4. The regex guard has one rule that D3 does not list, needed for its stated guarantee: two
+   variable-width items that follow each other must not be able to match the same byte (an
+   optional item does not separate them). Without it three adjacent `[a-z]{1,200}` items pass
+   width and cost yet cost 200^3 steps per start position. The cost is the maximum width times
+   the number of alternation paths (equal to D3's formula when no group holds an alternation).
+   Also: patterns compile as byte patterns, are ASCII only, refuse anchors, and `\xHH` and `\t`
+   are the only non-punctuation literal escapes besides `\d \w \s \b`.
+5. Entropy: `=` is base64 padding only at the end of a token (see bug 6); the minimum length
+   setting applies to base64 and the hex minimum is the larger of 32 and that setting; the 64-bit
+   floor of D7 is enforced at run time (length times measured entropy must reach 64 bits), which
+   matters once thresholds are lowered inside the D5 bounds.
+6. Entropy context: the key must end within 8 blank or quote characters before the token and
+   allow at most 4 blanks before `:` or `=`; `Authorization: Bearer <token>` therefore has no
+   context (low confidence).
+7. A key block that reaches `MAX_KEY_LINES` is reported at confidence medium and is not an issue;
+   D6 does not say which. A `Match` carries `severity` and `shown_chars`, because the encrypted
+   key variant has another severity than the rule and D7's shown prefix is per rule.
+8. Columns: "each invalid byte counts as one" is implemented with Python's replacement rule (one
+   per maximal invalid subpart), which is the same for isolated bytes.
+9. The engine result flags `capped` (more than `MAX_FINDINGS_PER_FILE` matches) and lists
+   over-long lines; mapping these to `findings_cap` and `line_too_long` issues is Phase 3.
+10. A new test marker `requires_sh` and a hook launcher script (Step 0 c), neither in the plan.
+
+### Known gaps and limits recorded
+
+- Token formats come from knowledge, not from live checks (no network): the GitHub checksum
+  (CRC32 of the 30 entropy characters, base62, 6 characters), the PyPI macaroon header, the
+  Slack and Azure shapes could be wrong in detail.
+- Package data (`rules/builtin.yaml`) inclusion in the built wheel is checked only in the Phase 6
+  release checks (hatchling is not in the venv).
+- The entropy detector flags near-miss tokens at confidence low; the default report level
+  (medium) hides them. Documented in the negative-corpus test.
+
+```
+Built: core/regex_guard.py (restricted grammar, named refusals, width and cost accounting, neighbour-ambiguity rule), Rule model, core/rules.py (schema), core/checksums.py (GitHub CRC32), core/fakes.py (runtime fake generator), services/loader.py (strict YAML: no duplicate keys, aliases, anchors, tags or merge keys; size cap; package data), rules/builtin.yaml (13 rules with fake specs), core/lines.py (binary, BOMs, UTF-16/32, lines, columns), core/detect (pre-filter, rule detector with checksum, entropy, private key state machine, engine with overlap resolution), core/findings.py (Match to redacted Finding), hygiene secret check switched to the engine; Step 0: owner name, hook gaps, blocking hook launcher
+Tests added: 732 (1434 total, 17 slow): regex guard 166 (every refusal reason, the D3 hostile table, CPython width cross-check, 1500 generated patterns), per-rule table 150 (13 rules x 8 contexts, near misses, placeholders, pre-filter consistency, checksum), loader and schema 99, entropy 67, fakes and checksums 36, private key 34, engine 31 (mixed and negative corpus, overlap reference), lines 28, hygiene +6, hook +68, launcher 8, slow tripwire 16
+Real coverage: 100.00% (branch, src/secret_scanner and scripts) in the full gate on Windows and in the full gate on WSL Ubuntu; floor 85
+Known gaps: CI has not run the Phase 2 code (Python 3.11 and 3.12 only parsed locally); token formats unverified against live services; wheel package-data inclusion unchecked until Phase 6; entropy flags near-miss tokens at low confidence; engine result flags (capped, long lines) are not yet issues; hook still cannot see aliases, variables or -EncodedCommand and fails open if sh cannot start; default gate 56 s to 60 s, at the 60 s target
+Deviations from PLAN.md: Rule in core/models.py; context is a keyword list; fake spec is a segment list; guard adds the neighbour-ambiguity rule and defines cost as width times alternation paths; entropy treats = as trailing padding only and enforces the 64-bit floor at run time; MAX_KEY_LINES gives medium not an issue; Match carries severity and shown_chars; requires_sh marker and hook launcher (all marked awaiting acceptance in the PLAN.md changelog)
 ```
