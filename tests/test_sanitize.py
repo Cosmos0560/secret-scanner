@@ -215,3 +215,12 @@ def test_is_display_safe_accepts_sanitised_output_and_refuses_raw_text() -> None
     assert is_display_safe("caf" + chr(0xE9) + "/" + chr(0x65E5))  # printable non-ASCII is fine
     assert not is_display_safe(chr(0))
     assert not is_display_safe("x" + chr(0x200B) + "y")
+
+
+def test_require_display_safe_returns_safe_text_and_refuses_raw_text_without_echoing_it() -> None:
+    from secret_scanner.core.sanitize import require_display_safe
+
+    assert require_display_safe("src/app.py", "path") == "src/app.py"
+    with pytest.raises(ValueError, match="host label is not escaped") as caught:
+        require_display_safe("a" + chr(0x1B) + "[31mINJECTED", "host label")
+    assert "INJECTED" not in str(caught.value)

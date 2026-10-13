@@ -164,11 +164,18 @@ def count_stale(entries: Iterable[SuppressionEntry], detected: Iterable[Finding]
 
 
 def baseline_document(
-    findings: Iterable[Finding], *, paths: Sequence[str] = (), reason: str = DEFAULT_REASON
+    findings: Iterable[Finding],
+    *,
+    paths: Sequence[str] = (),
+    reason: str = DEFAULT_REASON,
+    reasons: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
     """Plain data for a baseline that suppresses `findings`: one entry per fingerprint, sorted by
     path, rule and fingerprint so the file is stable and reviewable. The path is the escaped
-    display form (informational; matching is by fingerprint)."""
+    display form (informational; matching is by fingerprint). `reasons` maps a fingerprint to the
+    reason a person already wrote for it, so refreshing a baseline keeps reviewed text; other
+    entries get `reason`."""
+    known = reasons or {}
     unique: dict[str, Finding] = {}
     for finding in findings:
         unique.setdefault(finding.fingerprint, finding)
@@ -180,7 +187,7 @@ def baseline_document(
                 "fingerprint": finding.fingerprint,
                 "rule": finding.rule_id,
                 "path": finding.location.path,
-                "reason": reason,
+                "reason": known.get(finding.fingerprint) or reason,
             }
             for finding in ordered
         ],

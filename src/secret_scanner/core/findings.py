@@ -12,6 +12,12 @@ from secret_scanner.core.models import Detector, Finding, Location, Redacted
 from secret_scanner.core.redact import redact_private_key, redact_secret
 
 
+def finding_sort_key(finding: Finding) -> tuple[str, int, int, str]:
+    """Report order: path, line, column, rule. Stable across runs, so reports can be diffed."""
+    location = finding.location
+    return (location.path_key, location.line, location.column, finding.rule_id)
+
+
 def redact_match(match: Match) -> Redacted:
     """The only form of a matched secret that may be shown."""
     if match.detector is Detector.PRIVATE_KEY:

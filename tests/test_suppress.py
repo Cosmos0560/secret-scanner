@@ -240,3 +240,29 @@ def test_baseline_document_of_nothing_is_valid() -> None:
     document = baseline_document([])
     assert document == {"version": 1, "suppress": [], "paths": []}
     assert parse_baseline(document) == Suppressions()
+
+
+def test_baseline_document_keeps_reasons_a_person_already_wrote() -> None:
+    findings = [finding(PRINT_A, path_key="a.py"), finding(PRINT_B, path_key="b.py")]
+    document = baseline_document(findings, reasons={PRINT_A: "vendored test key, reviewed"})
+    entries = document["suppress"]
+    assert isinstance(entries, list)
+    assert [entry["reason"] for entry in entries] == ["vendored test key, reviewed", DEFAULT_REASON]
+    # an empty written reason falls back to the default instead of writing a blank one
+    blank = baseline_document(findings[:1], reasons={PRINT_A: ""})
+    blank_entries = blank["suppress"]
+    assert isinstance(blank_entries, list)
+    assert blank_entries[0]["reason"] == DEFAULT_REASON
+
+
+def test_findings_sort_by_path_line_column_then_rule() -> None:
+    from secret_scanner.core.findings import finding_sort_key
+
+    ordered = [
+        finding(PRINT_A, path_key="a.py", line=1, rule_id="b-rule"),
+        finding(PRINT_B, path_key="a.py", line=1, rule_id="z-rule"),
+        finding(PRINT_C, path_key="a.py", line=2, rule_id="a-rule"),
+        finding(PRINT_A, path_key="b.py", line=1, rule_id="a-rule"),
+    ]
+    shuffled = [ordered[2], ordered[3], ordered[1], ordered[0]]
+    assert sorted(shuffled, key=finding_sort_key) == ordered

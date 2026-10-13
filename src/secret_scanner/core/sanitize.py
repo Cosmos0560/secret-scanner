@@ -120,6 +120,15 @@ def is_display_safe(text: str) -> bool:
     return all(char == "\\" or not _needs_escape(ord(char)) for char in text)
 
 
+def require_display_safe(text: str, what: str) -> str:
+    """Return `text` unchanged when `is_display_safe` holds, else raise `ValueError` naming `what`
+    (never the text). Renderers use it on every string they were handed, so a value that skipped
+    the sanitiser fails loudly instead of reaching a terminal or a report."""
+    if not is_display_safe(text):
+        raise ValueError(f"{what} is not escaped for display (core/sanitize.py)")
+    return text
+
+
 def sanitize_bytes(data: bytes, *, max_chars: int | None = None, ascii_only: bool = False) -> str:
     """Sanitise bytes as UTF-8 with `surrogateescape`, so invalid bytes show as `\\udcNN`."""
     return sanitize(

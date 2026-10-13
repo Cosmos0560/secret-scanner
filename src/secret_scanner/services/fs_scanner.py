@@ -16,7 +16,7 @@ from dataclasses import dataclass, field, replace
 from secret_scanner.core.clock import Clock
 from secret_scanner.core.detect.engine import Engine
 from secret_scanner.core.detect.entropy import EntropyConfig, path_excluded
-from secret_scanner.core.findings import to_finding
+from secret_scanner.core.findings import finding_sort_key, to_finding
 from secret_scanner.core.globs import compile_globs
 from secret_scanner.core.limits import DEFAULT_LIMITS, Limits
 from secret_scanner.core.lines import TextKind
@@ -55,11 +55,6 @@ class ScanResult:
     @property
     def complete(self) -> bool:
         return not self.issues
-
-
-def _sort_key(finding: Finding) -> tuple[str, int, int, str]:
-    location = finding.location
-    return (location.path_key, location.line, location.column, finding.rule_id)
 
 
 def scan_tree(
@@ -164,7 +159,7 @@ def scan_tree(
                 )
             )
             break
-    findings.sort(key=_sort_key)
+    findings.sort(key=finding_sort_key)
     return ScanResult(tuple(findings), tuple(issues), stats, truncated)
 
 
