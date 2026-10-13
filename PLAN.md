@@ -874,3 +874,23 @@ phase report written. Tagging and pushing are yours.
      only on Windows are handled the way the gate already handles platform-specific code (combined
      Windows and WSL Linux coverage, or the existing pragma convention with a reason); the 85%
      floor is not lowered and there are no blanket exclusions.
+- v0.8 (2026-10-13): Phase 3 interpretations and additions, **awaiting acceptance** (details in
+  docs/phase-reports.md):
+  1. Exit code with `--write-baseline`: unchanged from D10. A run that finds something still exits
+     1 and the baseline it wrote is the way to accept those findings; D9 does not say otherwise.
+  2. A written baseline holds the reported findings and the ones the given baseline already
+     suppressed by fingerprint, after the `--min-confidence` filter. Reasons already written are
+     kept, path globs are carried over, and a finding that only a path glob covers is not
+     duplicated as a fingerprint entry. D9 says "every current finding".
+  3. Error messages never echo a key name, limit name or glob pattern taken from a configuration,
+     rules or baseline file (they list the allowed keys, or the position of the entry): a mistyped
+     key can be a pasted secret. This changed the text of existing messages.
+  4. `--output` may not name the file given as `--config` or `--baseline`, and `--output` and
+     `--write-baseline` may not name the same file; `--write-baseline` may replace `--baseline`
+     (with `--force`). `--output` and `--write-baseline` inside the scanned tree are refused.
+  5. The JSON `host` and the table take the host label from the application, not from `Report`
+     (`Report` has no host field); the table is written to stdout, notices to stderr, and with
+     `--output` stdout stays empty.
+  6. `OutputFormat` (table, json) is a core model; the built-in rules are parsed once per process.
+  7. Escaped output doubles backslashes (sanitiser design, Phase 1), so a Windows path in a report
+     shows `\` separators. Documented in docs/report-schema.md.

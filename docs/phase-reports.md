@@ -5,45 +5,8 @@ CLAUDE.md section 2, step 5. The last entry is the one a new session reads first
 
 ## In progress
 
-Phase 3 (directory scan, suppression, `scan` with table and JSON) is partly built; Step 0 (owner
-decisions, gate time) is done and committed. Stopped at a clean commit because the usage limit was
-reached; the Phase 3 report and the WSL Linux check have NOT been done.
-
-Done and committed (each through the gate): `core/globs.py`, `core/suppress.py` (baseline schema,
-matching, stale counting, document writer), `core/entries.py`, display-safety validation on
-`Location`, `ScanIssue` and `Report`, `fs/walk.py`, `fs/safe_files.py`, the temporary-path guard in
-`tests/conftest.py`, `host/clock.py`, `host/hostinfo.py`, `services/config.py` (+ `dump_yaml` in the
-loader), `services/fs_scanner.py`. The default gate is about 21 s to 25 s (was 45 s to 60 s): the
-private key header pattern was compiled once per file; hygiene control tests now share one repository.
-
-To do, in order: (1) add tests for `fs_scanner._count_skip` (symlink, offline, special branches, now
-uncovered); (2) `render/table.py` and `render/json_out.py` (pure; Report.findings holds reported
-findings plus suppressed ones, marked, when `--show-suppressed`; JSON schema `secret-report/1`
-as sketched in the session: schema, tool, generated_at, host, rules_sha256, target, complete,
-truncated, history_complete, counts, stats, findings, issues; `json.dumps(ensure_ascii=True)`);
-(3) `app/scan.py` (validate paths with pathrules, `check_scan_root`, outputs outside the scanned
-tree via `safe_files.is_inside`, `check_output_target` before scanning, config/baseline merge with CLI
-over config, confidence filter, suppression, stale only when complete, exit codes 0/1/4, call
-`walk`/`safe_files` module-qualified so the path guard applies); (4) CLI `scan` subcommand
-(`--format table|json`, `--output`, `--force`, `--config`, `--baseline`, `--write-baseline`,
-`--show-suppressed`, `--min-confidence`, `--fail-on`, `--no-default-excludes`, `--host-label`);
-(5) end-to-end tests: exit-code table, redaction/leak tests on every output path and error path,
-hostile names, cp1252 stdout, output atomicity and `--force`, baseline round trip; (6)
-`docs/report-schema.md` and drift tests; (7) PLAN.md changelog v0.7 and the Phase 3 report.
-
-Owner decisions of 2026-10-13 (PLAN.md v0.7, accepted): the v0.3 (Phase 1) deviations are
-accepted; `--write-baseline` is built in Phase 3 (accepted scope change: the Phase 3 Scope sentence
-excluded it, its Tests list requires the `--write-baseline` / `--baseline` round trip); the
-`rules` command (D4) is built in Phase 5 with the demo; `fs_scanner._count_skip` gets tests, and
-platform-only lines follow the gate's existing convention (combined Windows + WSL Linux coverage or
-a pragma with a reason; the 85% floor is not lowered, no blanket exclusions).
-
-Repository check at the start of the continuation (2026-10-13): the only tracked file without an
-extension is `LICENSE`; no path named `file` exists in any commit or on disk (outside `.venv` and
-`.git`); the only entry with exactly 201 added lines in the history is `tests/test_hygiene_repo.py`
-(commit 3156230, Phase 1, not one of the last three commits). `x.gate.log` is untracked and ignored
-by the `*.gate.log` pattern in `.gitignore`. `AGENTS.md` and `.codex/` are untracked and ignored;
-they were not read.
+Nothing. Phase 3 is complete (entry at the end of this file). Phase 4 (git history scan) is next;
+its decisions D1, D2, D13 (`--gitignore`) and D17 are approved in PLAN.md section 0.
 
 ## Phase 1 - Foundation, gate, hook, CI, pure core (2026-10-12)
 
@@ -210,4 +173,98 @@ Tests added: 732 (1434 total, 17 slow): regex guard 166 (every refusal reason, t
 Real coverage: 100.00% (branch, src/secret_scanner and scripts) in the full gate on Windows and in the full gate on WSL Ubuntu; floor 85
 Known gaps: CI has not run the Phase 2 code (Python 3.11 and 3.12 only parsed locally); token formats unverified against live services; wheel package-data inclusion unchecked until Phase 6; entropy flags near-miss tokens at low confidence; engine result flags (capped, long lines) are not yet issues; hook still cannot see aliases, variables or -EncodedCommand and fails open if sh cannot start; default gate 56 s to 60 s, at the 60 s target
 Deviations from PLAN.md: Rule in core/models.py; context is a keyword list; fake spec is a segment list; guard adds the neighbour-ambiguity rule and defines cost as width times alternation paths; entropy treats = as trailing padding only and enforces the 64-bit floor at run time; MAX_KEY_LINES gives medium not an issue; Match carries severity and shown_chars; requires_sh marker and hook launcher (all accepted by the owner on 2026-10-12, PLAN.md v0.6)
+```
+
+## Phase 3 - Directory scan, suppression, `scan` with table and JSON (2026-10-12 to 2026-10-13)
+
+The phase ran over two sessions; the first stopped at commit e1d2368 (usage limit), the second
+continued from the "In progress" list and finished it. Owner decisions of 2026-10-13 (PLAN.md v0.7,
+accepted): the v0.3 Phase 1 deviations; `--write-baseline` in Phase 3; the `rules` command in
+Phase 5 with the demo; `_count_skip` tests with platform-only lines left to the combined
+Windows + WSL Linux coverage.
+
+### What was built
+
+- `core/globs.py` (segment-wise matcher, no regex), `core/suppress.py` (baseline schema, matching,
+  stale counting, written document with reason carry-over), `core/entries.py` (entry classification),
+  display-safety validation on `Location`, `ScanIssue`, `Report` and `require_display_safe`.
+- `fs/walk.py` (the only reader of scanned files: no-follow, regular files only, limits),
+  `fs/safe_files.py` (own files: strict read, atomic no-clobber write, `is_inside`, `is_same_path`),
+  the temporary-path guard in `tests/conftest.py`.
+- `host/clock.py`, `host/hostinfo.py`, `services/config.py` (configuration and baseline),
+  `services/fs_scanner.py` (issues, caps, time budget), `services/loader.py` (`dump_yaml`, cached
+  built-in rules).
+- `render/table.py`, `render/json_out.py`, `app/scan.py`, the CLI `scan` command with `--format`,
+  `--output`, `--force`, `--config`, `--baseline`, `--write-baseline`, `--show-suppressed`,
+  `--min-confidence`, `--fail-on`, `--no-default-excludes` and `--host-label`.
+- `docs/report-schema.md` with drift tests; end-to-end tests for the exit-code table, leakage on
+  every output and error path, and hostile names.
+
+### Measured on this machine (Windows 11, Python 3.13.14, git 2.54.0.windows.1; WSL Ubuntu, Python 3.14.4, git 2.53.0)
+
+| Run | Commit | Result |
+|---|---|---|
+| Windows default gate | 5c50f1b | 1803 passed, 14 skipped, 99.79% branch coverage, 62.5 s total (pytest 57.9 s) |
+| Windows full gate | 5c50f1b | 1820 passed, 14 skipped (`posix_only`), 99.79%, 120.7 s |
+| WSL Ubuntu full gate | 5c50f1b | 1833 passed, 1 skipped (`windows_only`), 99.94%, 14.6 s |
+
+The Windows default gate varied between 48 s and 110 s over the session on this machine (the 110 s
+run was before the built-in rules were parsed once per process; the leakage matrix alone cost 27 s
+under coverage then and costs about 5 s now). The 60 s target is exceeded slightly; the 90 s
+threshold for moving tests to `slow` is not. The uncovered lines on each OS are the other OS's
+branches of `fs/safe_files.py` (POSIX: directory flush, `os.link`; Windows: `os.rename`); together
+the two runs cover every line and branch.
+
+### What the tests found (fixed in this phase)
+
+1. Error messages echoed up to 40 characters of an unknown key, a limit name or a glob pattern from
+   a configuration or baseline file; a pasted token as a key would have been printed whole. They now
+   list the allowed keys or the position of the entry (PLAN.md v0.8, item 3).
+2. `--output` could name the configuration or baseline file being read and destroy it with
+   `--force`; refused (item 4).
+3. Refreshing a baseline with `--write-baseline` would have lost reasons a person had written;
+   they are carried over (item 2).
+4. argparse echoes a bad option value verbatim; its messages now go through the sanitiser.
+5. The first version of the leak matrix scanned the test's own input files (which hold the fake by
+   construction); it now checks only what the tool wrote and asserts that nothing else was left
+   behind (no temporary files).
+
+### Deviations and interpretations (also in the PLAN.md changelog v0.8; awaiting acceptance)
+
+1. `--write-baseline` does not change the exit code (D10 unchanged): a run that finds something
+   still exits 1.
+2. A written baseline holds the reported findings plus those already suppressed by fingerprint,
+   after the confidence filter; reasons and path globs are carried over; path-only suppressions
+   are not duplicated (D9 says "every current finding").
+3. Error messages no longer echo keys, limit names or glob patterns from files the tool reads.
+4. Output safety rules beyond the plan: `--output` may not be the `--config` or `--baseline` file;
+   `--output` and `--write-baseline` may not be the same file; `--write-baseline` may replace the
+   `--baseline` it read (with `--force`).
+5. The host label reaches JSON through the application, not through `Report`; notices go to
+   stderr, the report to stdout (nothing on stdout with `--output`).
+6. `OutputFormat` is a core model; the built-in rules are cached per process.
+7. Escaped output doubles backslashes (Phase 1 sanitiser), so a Windows path shows `\\`.
+
+### Known gaps and limits recorded
+
+- `scan` refuses a PATH, `--output`, `--config` or `--baseline` with a `..` component (Phase 1
+  path rules); pass an absolute path or run from the parent directory.
+- `scan --gitignore`, `scan-git`, `--write-baseline` for git targets: Phase 4. JSONL, SARIF, the
+  demo and the `rules` command: Phase 5. The README, threat model and measured performance:
+  Phase 6.
+- Hostile names with control characters (newline, ESC, CR LF, invalid UTF-8) can only be created
+  on POSIX; their tests (`posix_only`) ran in the WSL check, not on Windows. Windows runs cover
+  bidi, zero-width, separator and non-BMP names.
+- The cp1252 console test uses an in-memory stream with the same encoding, not a real console.
+- CI has run only up to commit e1d2368 (CI #3, green on all six jobs); the commits after it are
+  checked locally on Windows and WSL only until the owner pushes.
+- A secret passed on the command line (argv) is echoed by argparse errors like any other value;
+  the leak tests cover content the tool reads, not what the user types.
+
+```
+Built: directory scan end to end: globs, baseline (schema, matching, stale counting, writer), read-only walker, safe own-file I/O, host label, configuration, fs scanner service, table and JSON renderers, scan use case, CLI scan (all options except --gitignore), docs/report-schema.md with drift tests
+Tests added: 419 in 13 new test files (suite: 1834 collected, 17 slow; Windows 1820 passed + 14 posix-only skipped, WSL 1833 passed + 1 windows-only skipped): walker and limits, globs, baseline, config bounds, scanner issues and skip counters, renderers, exit-code table, leakage on every output and error path for every rule, hostile names, output safety, schema drift
+Real coverage: 99.79% (branch, full gate, Windows, commit 5c50f1b); 99.94% in the WSL Linux full gate; the lines each OS misses are the other OS's branches in fs/safe_files.py; floor 85
+Known gaps: no git scanning yet (Phase 4); JSONL, SARIF, demo and rules command in Phase 5; PATH with .. refused; control-character names tested only on POSIX; default gate 62.5 s against a 60 s target (48 s to 110 s observed); CI has not run the commits after e1d2368
+Deviations from PLAN.md: --write-baseline in Phase 3 (accepted, v0.7); awaiting acceptance (v0.8): exit code unchanged by --write-baseline, written baseline content, no echo of keys or globs in errors, extra output-file refusals, host label and notices wiring, OutputFormat model and rules cache, doubled backslashes in escaped output
 ```
