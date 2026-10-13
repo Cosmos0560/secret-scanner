@@ -31,11 +31,19 @@ over config, confidence filter, suppression, stale only when complete, exit code
 hostile names, cp1252 stdout, output atomicity and `--force`, baseline round trip; (6)
 `docs/report-schema.md` and drift tests; (7) PLAN.md changelog v0.7 and the Phase 3 report.
 
-Interpretation to record as "awaiting acceptance" in the changelog: PLAN.md Phase 3 Scope excludes
-`--write-baseline` but its Tests list requires the `--write-baseline` / `--baseline` round trip, so
-`--write-baseline` is built in Phase 3. The `rules` command is in no phase list (Phase 3 excludes
-it); it needs an owner decision on which phase builds it. The v0.3 (Phase 1) deviations were not
-covered by the owner's acceptance and stay awaiting acceptance.
+Owner decisions of 2026-10-13 (PLAN.md v0.7, accepted): the v0.3 (Phase 1) deviations are
+accepted; `--write-baseline` is built in Phase 3 (accepted scope change: the Phase 3 Scope sentence
+excluded it, its Tests list requires the `--write-baseline` / `--baseline` round trip); the
+`rules` command (D4) is built in Phase 5 with the demo; `fs_scanner._count_skip` gets tests, and
+platform-only lines follow the gate's existing convention (combined Windows + WSL Linux coverage or
+a pragma with a reason; the 85% floor is not lowered, no blanket exclusions).
+
+Repository check at the start of the continuation (2026-10-13): the only tracked file without an
+extension is `LICENSE`; no path named `file` exists in any commit or on disk (outside `.venv` and
+`.git`); the only entry with exactly 201 added lines in the history is `tests/test_hygiene_repo.py`
+(commit 3156230, Phase 1, not one of the last three commits). `x.gate.log` is untracked and ignored
+by the `*.gate.log` pattern in `.gitignore`. `AGENTS.md` and `.codex/` are untracked and ignored;
+they were not read.
 
 ## Phase 1 - Foundation, gate, hook, CI, pure core (2026-10-12)
 

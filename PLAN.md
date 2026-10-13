@@ -741,7 +741,7 @@ Depends on: D9, D10, D11 (table, JSON), D13 (default excludes), D18, D19.
 **Scope:** `fs/walk.py`; `fs/safe_files.py`; `core/globs.py`; `core/suppress.py`;
 `services/config.py`; `services/fs_scanner.py`; `app/scan.py`; `render/table.py`;
 `render/json_out.py`; `host/clock.py`, `host/hostinfo.py`; CLI `scan` with all options except
-`--gitignore`, `--write-baseline`, and `rules` (if approved); `docs/report-schema.md`.
+`--gitignore` (Phase 4); `--write-baseline` is in scope (v0.7); `docs/report-schema.md`.
 **Tests:** walker on temporary trees (regular, empty, hidden, nested, default excludes, config
 excludes, symlinks to files and directories and dangling ones, junctions on Windows, FIFO on POSIX,
 unreadable on POSIX unless root, vanished and swapped during read via a reader hook, every limit
@@ -778,7 +778,9 @@ on both; report written.
 ### Phase 5 - JSONL, SARIF, demo, cross-format leak proof (size: M)
 Depends on: D11, D12, D17.
 **Scope:** `render/jsonl.py`; `render/sarif.py`; `fs/sandbox.py`; `gitio/demo_git.py`;
-`app/demo.py`; CLI `demo`; `docs/siem-mapping.md` (mini-siem parser re-read read-only; a real
+`app/demo.py`; CLI `demo` and CLI `rules` (D4, assigned here by v0.7; lists id, name, severity,
+confidence and description; a drift test compares it with the rules file);
+`docs/siem-mapping.md` (mini-siem parser re-read read-only; a real
 ingest of demo JSONL with mini-siem's own existing environment, data directory in a temporary
 folder, mini-siem's tree left unchanged); `docs/sarif.md`.
 **Demo:** creates a temporary directory through the sandbox; writes a few files with generated
@@ -858,3 +860,17 @@ phase report written. Tagging and pushing are yours.
   knowledge, not from live checks; the Claude Code hook (a development control, not part of the
   tool) cannot see shell aliases, variables or PowerShell `-EncodedCommand`, and is not in force
   if `sh` cannot start.
+- v0.7 (2026-10-13): owner decisions at the start of the Phase 3 continuation, **accepted by the
+  owner on 2026-10-13**:
+  1. The v0.3 (Phase 1) deviations are accepted (the seven items listed under v0.3 above; the
+     first was resolved by v0.5 and the author placeholder, the sixth, by v0.4).
+  2. Accepted scope change: `--write-baseline` is built in Phase 3, not Phase 4 or later. The
+     Phase 3 Scope sentence excluded it, but its Tests list requires the `--write-baseline` /
+     `--baseline` round trip. The Phase 3 Scope line is edited accordingly; `scan-git` gets the same
+     option in Phase 4.
+  3. The `rules` command (D4, approved) was in no phase list. It is assigned to Phase 5, together
+     with the demo. The Phase 5 Scope line is edited accordingly.
+  4. Test policy: `fs_scanner._count_skip` is covered by tests. Lines that can only run on POSIX or
+     only on Windows are handled the way the gate already handles platform-specific code (combined
+     Windows and WSL Linux coverage, or the existing pragma convention with a reason); the 85%
+     floor is not lowered and there are no blanket exclusions.
