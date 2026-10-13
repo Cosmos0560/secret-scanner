@@ -356,19 +356,20 @@ class _Call:
         thread because git answers while it reads: a writer that blocks on a full input pipe
         while nobody reads the output pipe would deadlock both sides. The caller reads the answers
         (`read_line`, `read_exact`) and the next `send` waits for this write to end first."""
-        if self.process.stdin is None:
+        stream = self.process.stdin
+        if stream is None:
             raise GitError("git has no input stream")
         self._wait_for_writer()
-        writer = threading.Thread(target=self._write, args=(data,), name="git-in", daemon=True)
+        writer = threading.Thread(
+            target=self._write, args=(stream, data), name="git-in", daemon=True
+        )
         self._writer = writer
         writer.start()
 
-    def _write(self, data: bytes) -> None:
-        stream = self.process.stdin
+    def _write(self, stream: IO[bytes], data: bytes) -> None:
         try:
-            if stream is not None:
-                stream.write(data)
-                stream.flush()
+            stream.write(data)
+            stream.flush()
         except (OSError, ValueError):
             self._write_failed.set()
 

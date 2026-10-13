@@ -190,13 +190,6 @@ class DiffEntry:
 LogToken = CommitHeader | DiffEntry
 
 
-def _decode_ascii(data: bytes, what: str) -> str:
-    try:
-        return data.decode("ascii")
-    except UnicodeDecodeError:
-        raise _fail(what) from None
-
-
 def _parse_header(token: bytes, id_length: int | None) -> tuple[CommitHeader, int]:
     fields = token[1:].split(b" ")
     if len(fields) < 3 or not is_object_id(fields[0]):
@@ -215,8 +208,8 @@ def _parse_header(token: bytes, id_length: int | None) -> tuple[CommitHeader, in
         raise _fail("a commit time")
     return (
         CommitHeader(
-            _decode_ascii(fields[0], "a commit id"),
-            tuple(_decode_ascii(parent, "a parent id") for parent in parents),
+            fields[0].decode("ascii"),
+            tuple(parent.decode("ascii") for parent in parents),
             int(stamp),
         ),
         length,
@@ -244,10 +237,10 @@ def _parse_raw(token: bytes, id_length: int | None) -> tuple[tuple[str, str, str
         raise _fail("a change status")
     return (
         (
-            _decode_ascii(old_mode, "a file mode"),
-            _decode_ascii(new_mode, "a file mode"),
-            _decode_ascii(old_oid, "an object id"),
-            _decode_ascii(new_oid, "an object id"),
+            old_mode.decode("ascii"),
+            new_mode.decode("ascii"),
+            old_oid.decode("ascii"),
+            new_oid.decode("ascii"),
             status.decode("ascii"),
         ),
         length,
@@ -318,7 +311,7 @@ class ObjectInfo:
 def parse_object_line(line: bytes, expected_oid: str) -> ObjectInfo:
     """`<oid> <type> <size>` or `<oid> missing`, for the object that was asked for."""
     fields = line.rstrip(b"\n").split(b" ")
-    if not fields or _decode_ascii(fields[0], "an object id") != expected_oid:
+    if not fields or fields[0] != expected_oid.encode("ascii"):
         raise _fail("an object answer for another object")
     if len(fields) == 2 and fields[1] == b"missing":
         return ObjectInfo(expected_oid, "missing", None)

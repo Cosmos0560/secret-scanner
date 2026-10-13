@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import NoReturn
+from typing import NoReturn, cast
 
 from secret_scanner.core.clock import Clock
 from secret_scanner.core.detect.engine import Engine
@@ -305,8 +305,8 @@ def scan_history(
                     if not scan.count_commit():
                         walking = False
                         break
-                elif commit is not None:
-                    pending.append((commit, token))
+                else:  # the parser only yields a change after the header of its commit
+                    pending.append((cast(CommitHeader, commit), token))
                     if len(pending) >= FLUSH_ENTRIES:
                         scan.flush(pending)
                         pending.clear()
