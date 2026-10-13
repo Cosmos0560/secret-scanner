@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import TypeVar
 
-from secret_scanner.core.errors import ConfigError
+from secret_scanner.core.errors import ConfigError, unknown_key_error
 from secret_scanner.core.fakes import CHARSETS, MAX_SEGMENT_CHARS, build_fake
 from secret_scanner.core.limits import DEFAULT_LIMITS, Limits
 from secret_scanner.core.models import (
@@ -86,9 +86,8 @@ def _mapping(
     keys = [key for key in value if isinstance(key, str)]
     if len(keys) != len(value):
         raise ConfigError(f"{where}: keys must be strings")
-    unknown = sorted(set(keys) - allowed)
-    if unknown:
-        raise ConfigError(f"{where}: unknown key {unknown[0]!r}")
+    if set(keys) - allowed:
+        raise unknown_key_error(where, allowed)
     missing = sorted(required - set(keys))
     if missing:
         raise ConfigError(f"{where}: missing key {missing[0]!r}")

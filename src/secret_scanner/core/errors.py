@@ -65,6 +65,13 @@ class ConfigError(SecretScannerError):
     exit_code = ExitCode.USAGE
 
 
+def unknown_key_error(where: str, allowed: Iterable[str]) -> ConfigError:
+    """The error for a key a file must not have. The key is never echoed: a mistyped key can be a
+    pasted secret, and error text reaches terminals and CI logs. The allowed keys are listed
+    instead, which is what a person needs to find the typo."""
+    return ConfigError(f"{where}: unknown key (allowed: {', '.join(sorted(allowed))})")
+
+
 class ScanIOError(SecretScannerError):
     """An I/O failure on one of the tool's own files."""
 

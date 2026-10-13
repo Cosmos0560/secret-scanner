@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
-from secret_scanner.core.errors import ConfigError
+from secret_scanner.core.errors import ConfigError, unknown_key_error
 from secret_scanner.core.globs import any_match, compile_globs
 from secret_scanner.core.limits import DEFAULT_LIMITS, MAX_PATH_CHARS, Limits
 from secret_scanner.core.models import (
@@ -65,9 +65,8 @@ def _optional_text(entry: Mapping[str, object], key: str, where: str, maximum: i
 def _entry(item: object, where: str) -> SuppressionEntry:
     if not isinstance(item, dict):
         raise ConfigError(f"{where}: must be a mapping")
-    unknown = sorted(str(key) for key in item if key not in _ENTRY_KEYS)
-    if unknown:
-        raise ConfigError(f"{where}: unknown key {unknown[0][:40]!r}")
+    if any(key not in _ENTRY_KEYS for key in item):
+        raise unknown_key_error(where, _ENTRY_KEYS)
     if "fingerprint" not in item:
         raise ConfigError(f"{where}: missing key 'fingerprint'")
     fingerprint = item["fingerprint"]
@@ -92,9 +91,8 @@ def parse_baseline(data: object, limits: Limits = DEFAULT_LIMITS) -> Suppression
     """Validate a parsed baseline document and return it as `Suppressions`."""
     if not isinstance(data, dict):
         raise ConfigError("baseline: must be a mapping")
-    unknown = sorted(str(key) for key in data if key not in _TOP_KEYS)
-    if unknown:
-        raise ConfigError(f"baseline: unknown key {unknown[0][:40]!r}")
+    if any(key not in _TOP_KEYS for key in data):
+        raise unknown_key_error("baseline", _TOP_KEYS)
     version = data.get("version")
     if isinstance(version, bool) or version != BASELINE_VERSION:
         raise ConfigError(f"baseline: version must be {BASELINE_VERSION}")

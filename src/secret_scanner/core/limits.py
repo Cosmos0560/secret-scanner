@@ -162,7 +162,8 @@ class Limits:
         for name, value in overrides.items():
             spec = _SPEC_BY_FIELD.get(name)
             if spec is None:
-                raise ConfigError(f"unknown limit: {name}")
+                # the name is not echoed (it may be a pasted secret); the known ones are listed
+                raise ConfigError(f"unknown limit (known: {', '.join(sorted(_SPEC_BY_FIELD))})")
             if isinstance(value, bool) or not isinstance(value, int):
                 raise ConfigError(f"limit {name} must be an integer")
             if value < 1:

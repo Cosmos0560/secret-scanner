@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import TypeVar
 
 from secret_scanner.core.detect.entropy import EntropyConfig
-from secret_scanner.core.errors import ConfigError
+from secret_scanner.core.errors import ConfigError, unknown_key_error
 from secret_scanner.core.globs import compile_globs
 from secret_scanner.core.limits import DEFAULT_LIMITS, Limits
 from secret_scanner.core.models import Confidence, Rule, Severity, Suppressions
@@ -83,9 +83,8 @@ def _entropy(value: object) -> EntropyConfig:
         return EntropyConfig()
     if not isinstance(value, dict):
         raise ConfigError("config.entropy: must be a mapping")
-    unknown = sorted(str(key) for key in value if key not in _ENTROPY_KEYS)
-    if unknown:
-        raise ConfigError(f"config.entropy: unknown key {unknown[0][:40]!r}")
+    if any(key not in _ENTROPY_KEYS for key in value):
+        raise unknown_key_error("config.entropy", _ENTROPY_KEYS)
     defaults = EntropyConfig()
     enabled = value.get("enabled", defaults.enabled)
     if not isinstance(enabled, bool):
@@ -116,9 +115,8 @@ def parse_config(
     """Validate a parsed configuration document."""
     if not isinstance(document, dict):
         raise ConfigError("config: must be a mapping")
-    unknown = sorted(str(key) for key in document if key not in _TOP_KEYS)
-    if unknown:
-        raise ConfigError(f"config: unknown key {unknown[0][:40]!r}")
+    if any(key not in _TOP_KEYS for key in document):
+        raise unknown_key_error("config", _TOP_KEYS)
     version = document.get("version")
     if isinstance(version, bool) or version != CONFIG_VERSION:
         raise ConfigError(f"config: version must be {CONFIG_VERSION}")

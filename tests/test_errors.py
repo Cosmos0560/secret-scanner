@@ -91,3 +91,11 @@ def test_plan_md_exit_codes_and_precedence_match_the_code() -> None:
     assert documented["2"] == "usage"
     assert documented["3"] == "git"
     assert documented["4"] == "incomplete"
+
+
+def test_unknown_key_errors_list_the_allowed_keys_and_never_echo_the_key() -> None:
+    from secret_scanner.core.errors import ConfigError, unknown_key_error
+
+    error = unknown_key_error("config", ["version", "exclude"])
+    assert isinstance(error, ConfigError)
+    assert str(error) == "config: unknown key (allowed: exclude, version)"
