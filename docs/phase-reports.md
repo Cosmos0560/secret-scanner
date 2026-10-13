@@ -284,4 +284,26 @@ Deviations from PLAN.md: --write-baseline in Phase 3 (accepted, v0.7); awaiting 
    `target.path` carries the same display form (no schema change). Tests: `sanitize_path` unit
    tests, refused-path messages for both flavours, and a CLI test that the table holds no doubled
    backslash (on Windows the scan root and output path really hold backslashes).
+2. Default gate time. Measured on this machine (Windows 11, Python 3.13.14, git 2.54.0.windows.1)
+   with the gate's own `--durations` option (added; it changes no check):
+
+   | Default gate | Total | pytest step | Tests | Coverage |
+   |---|---|---|---|---|
+   | before (commit f2e26fd) | 58.8 s (58.8 to 63.0 s over three runs) | 53 s to 55 s | 1811 passed, 14 skipped, 17 deselected | 99.79% |
+   | after | 33.1 s | 27.7 s | 1819 passed, 14 skipped, 31 deselected | 99.79% |
+
+   What the durations showed: the slowest single tests were 3 s or less, and the top 45 together
+   were about 17 s of 53 s. Per-phase totals under coverage were setup 19.6 s and call 16.5 s: the
+   autouse fixtures (a fresh `tmp_path`, a home directory, five `setenv` and eight `setattr` calls
+   per test) cost about 10 ms per test, 1 800 times. What changed, behaviour covered the same:
+   - isolation (`HOME` and the other per-user variables) and the socket blocker are applied once
+     per session; after each test a check fails the test if it wrote into the isolated home
+     (`check_isolated_home_is_empty`, with its own test). Setup fell from 19.6 s to 3.0 s.
+   - the leakage matrix (`tests/test_scan_leakage.py`): one representative of each detector kind
+     (`aws-access-key-id`, `private-key`, `entropy-base64`) runs every output format and every
+     error path in the default gate; the other 12 rules run the same matrix as `slow` tests (full
+     gate and CI). All rules also run through the table and JSON renderers in the default gate.
+   - generated patterns: 300 of the seeded 1 500 in the default gate, all 1 500 as `slow`; deep
+     YAML nesting: 600 levels in the default gate, 3 000 as `slow`.
+   The slow tests added by this are run in the full gate (see the end of this entry).
 

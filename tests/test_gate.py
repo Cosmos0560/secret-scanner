@@ -58,6 +58,28 @@ def test_fast_gate_excludes_slow_tests_and_full_gate_does_not() -> None:
     assert gate.build_steps("py", full=True)[-1].name == "pytest (full)"
 
 
+def test_durations_option_only_adds_the_pytest_report() -> None:
+    plain = gate.build_steps("py", full=False)
+    timed = gate.build_steps("py", full=False, durations=25)
+    assert timed[:-1] == plain[:-1]
+    assert timed[-1].argv == (*plain[-1].argv, "--durations=25")
+    assert timed[-1].name == plain[-1].name
+    assert not any("--durations" in arg for arg in plain[-1].argv)
+
+
+def test_durations_option_reaches_the_pytest_step() -> None:
+    seen: list[Step] = []
+
+    def run(step: Step, cwd: Path, emit: gate.Emit) -> int:
+        seen.append(step)
+        return 0
+
+    out = io.StringIO()
+    code = gate.main(["--durations", "7"], runner=run, clock=_Clock(), python="py", out=out)
+    assert code == 0
+    assert "--durations=7" in seen[-1].argv
+
+
 def test_coverage_floor_matches_pyproject() -> None:
     text = (gate.ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert f"fail_under = {gate.COVERAGE_FLOOR}" in text

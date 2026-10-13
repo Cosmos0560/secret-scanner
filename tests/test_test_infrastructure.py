@@ -76,11 +76,39 @@ def test_socket_calls_fail_during_tests() -> None:
         socket.socketpair()
 
 
-def test_per_user_locations_point_into_the_temporary_directory(tmp_path: Path) -> None:
+def test_per_user_locations_point_into_the_temporary_directory(
+    tmp_path_factory: pytest.TempPathFactory, isolated_home: Path
+) -> None:
+    base = tmp_path_factory.getbasetemp()
+    assert isolated_home.is_relative_to(base)
     for name in conftest.ISOLATED_ENVIRONMENT:
-        value = os.environ[name]
-        assert Path(value).is_relative_to(tmp_path), name
-    assert Path.home().is_relative_to(tmp_path)
+        assert Path(os.environ[name]) == isolated_home, name
+    assert Path.home() == isolated_home
+    assert os.listdir(isolated_home) == []
+
+
+def test_a_changed_variable_is_restored_to_the_session_value(
+    monkeypatch: pytest.MonkeyPatch, isolated_home: Path
+) -> None:
+    monkeypatch.setenv("HOME", "elsewhere")
+    assert os.environ["HOME"] == "elsewhere"
+    monkeypatch.undo()
+    assert Path(os.environ["HOME"]) == isolated_home
+
+
+def test_the_isolated_home_check_fails_a_test_that_writes_there_and_cleans_up(
+    tmp_path: Path,
+) -> None:
+    conftest.check_isolated_home_is_empty(tmp_path)  # empty: fine
+    (tmp_path / "stray.txt").write_text("x", encoding="utf-8")
+    (tmp_path / "stray-dir").mkdir()
+    (tmp_path / "stray-dir" / "inner").write_text("y", encoding="utf-8")
+    with pytest.raises(pytest.fail.Exception, match="wrote 2 entries into the isolated home"):
+        conftest.check_isolated_home_is_empty(tmp_path)
+    assert os.listdir(tmp_path) == []
+    (tmp_path / "one").write_text("x", encoding="utf-8")
+    with pytest.raises(pytest.fail.Exception, match="wrote 1 entry into"):
+        conftest.check_isolated_home_is_empty(tmp_path)
 
 
 # -- named skip markers ---------------------------------------------------------------------

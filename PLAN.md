@@ -906,3 +906,15 @@ phase report written. Tagging and pushing are yours.
      backslash is a name character and stays escaped; the JSON `target.path` carries the same
      display form, and its encoding and the schema `secret-report/1` are unchanged.
      A test asserts that table output holds no doubled backslash.
+  2. Gate time: the default gate (50 s to 62 s, 48 s to 110 s observed) is brought to about 40 s
+     without weakening the coverage of any behaviour. `scripts/gate.py` gets `--durations N`
+     (lists the slowest tests; no check is changed). The cost was fixture setup, not slow tests:
+     per-test directories, `setenv` and socket patching ran 1 800 times under branch coverage.
+     Environment isolation and the socket blocker are now applied once per session, and a
+     per-test check proves a test left nothing in the isolated home. The leakage matrix keeps one
+     representative per detector kind through every format and error path in the default run (the
+     other rules run it as `slow`), and every rule still goes through the table and JSON renderers
+     in the default run. Two generated or oversized inputs (1 500 random patterns, 3 000 nesting
+     levels) run reduced in the default gate and in full as `slow`. Measured numbers are in
+     docs/phase-reports.md. The floor of 85 % and every threshold are unchanged.
+

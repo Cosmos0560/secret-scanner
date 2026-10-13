@@ -132,7 +132,7 @@ def test_a_new_file_is_created_with_exactly_the_data_and_no_temporary_is_left(
 ) -> None:
     write_new_file(str(tmp_path / "out.json"), b'{"a": 1}\n')
     assert (tmp_path / "out.json").read_bytes() == b'{"a": 1}\n'
-    assert listing(tmp_path) == ["isolated-home", "out.json"]
+    assert listing(tmp_path) == ["out.json"]
 
 
 def test_empty_data_is_written(tmp_path: Path) -> None:
@@ -153,7 +153,7 @@ def test_an_existing_file_is_never_overwritten_without_force(tmp_path: Path) -> 
         write_new_file(str(target), b"new")
     assert caught.value.exit_code is ExitCode.USAGE
     assert target.read_bytes() == b"precious"
-    assert listing(tmp_path) == ["isolated-home", "out"]
+    assert listing(tmp_path) == ["out"]
 
 
 def test_force_replaces_a_regular_file(tmp_path: Path) -> None:
@@ -161,7 +161,7 @@ def test_force_replaces_a_regular_file(tmp_path: Path) -> None:
     target.write_bytes(b"old")
     write_new_file(str(target), b"new", force=True)
     assert target.read_bytes() == b"new"
-    assert listing(tmp_path) == ["isolated-home", "out"]
+    assert listing(tmp_path) == ["out"]
 
 
 def test_force_creates_a_missing_file_too(tmp_path: Path) -> None:
@@ -189,7 +189,7 @@ def test_a_link_target_is_refused_even_with_force_and_the_link_target_is_untouch
         with pytest.raises(ScanIOError, match="link or reparse point"):
             write_new_file(str(tmp_path / "out"), b"attack", force=force)
     assert victim.read_bytes() == b"victim data"
-    assert listing(tmp_path) == ["isolated-home", "out", "victim"]
+    assert listing(tmp_path) == ["out", "victim"]
 
 
 @pytest.mark.requires_symlinks
@@ -222,7 +222,7 @@ def test_a_target_created_after_the_check_is_not_clobbered_without_force(
     with pytest.raises(ScanIOError, match="already exists"):
         write_new_file(str(target), b"loser")
     assert target.read_bytes() == b"won the race"
-    assert listing(tmp_path) == ["isolated-home", "out"]
+    assert listing(tmp_path) == ["out"]
 
 
 def test_a_failed_write_leaves_neither_temporary_nor_a_changed_target(
@@ -238,7 +238,7 @@ def test_a_failed_write_leaves_neither_temporary_nor_a_changed_target(
     with pytest.raises(ScanIOError, match=r"cannot be written \(ENOSPC\)"):
         write_new_file(str(target), b"new", force=True)
     assert target.read_bytes() == b"old"
-    assert listing(tmp_path) == ["isolated-home", "out"]
+    assert listing(tmp_path) == ["out"]
 
 
 def test_a_failure_to_publish_is_reported_and_cleaned_up(
@@ -250,7 +250,7 @@ def test_a_failure_to_publish_is_reported_and_cleaned_up(
     monkeypatch.setattr(os, "replace", refuse)
     with pytest.raises(ScanIOError, match=r"cannot be written \(EACCES\)"):
         write_new_file(str(tmp_path / "out"), b"x", force=True)
-    assert listing(tmp_path) == ["isolated-home"]
+    assert listing(tmp_path) == []
 
 
 def test_a_failure_to_create_the_temporary_is_reported(

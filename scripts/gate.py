@@ -7,7 +7,8 @@ if any step failed:
 
 `--full` includes the tests marked `slow` (as CI does). `--log FILE` writes the complete output to
 FILE as well, without changing the exit status; never pipe or redirect the gate itself, because a
-filter hides failures and masks the exit status.
+filter hides failures and masks the exit status. `--durations N` also lists the N slowest tests,
+which is how the default gate's time is audited (nothing is filtered or skipped by it).
 """
 
 from __future__ import annotations
@@ -49,8 +50,9 @@ Emit = Callable[[str], None]
 Runner = Callable[[Step, Path, Emit], int]
 
 
-def build_steps(python: str, *, full: bool) -> list[Step]:
-    """The six gate steps, in order. `python` is the interpreter that runs every tool."""
+def build_steps(python: str, *, full: bool, durations: int = 0) -> list[Step]:
+    """The six gate steps, in order. `python` is the interpreter that runs every tool.
+    `durations` (more than 0) makes pytest list that many slowest tests; it changes no check."""
     pytest_argv = [
         python,
         "-m",
@@ -64,6 +66,8 @@ def build_steps(python: str, *, full: bool) -> list[Step]:
     ]
     if not full:
         pytest_argv += ["-m", "not slow"]
+    if durations > 0:
+        pytest_argv += [f"--durations={durations}"]
     return [
         Step("ruff check", (python, "-m", "ruff", "check", ".")),
         Step("ruff format --check", (python, "-m", "ruff", "format", "--check", ".")),
@@ -135,6 +139,13 @@ def main(
     parser = argparse.ArgumentParser(prog="gate", description="Run the project gate.")
     parser.add_argument("--full", action="store_true", help="include tests marked slow")
     parser.add_argument("--log", metavar="FILE", help="also write the full output to FILE")
+    parser.add_argument(
+        "--durations",
+        type=int,
+        default=0,
+        metavar="N",
+        help="list the N slowest tests (pytest --durations); changes no check",
+    )
     args = parser.parse_args(argv)
 
     stream = out if out is not None else sys.stdout
@@ -151,7 +162,7 @@ def main(
             if log is not None:
                 print(line, file=log)
 
-        steps = build_steps(python or sys.executable, full=args.full)
+        steps = build_steps(python or sys.executable, full=args.full, durations=args.durations)
         results = run_gate(steps, cwd=root, runner=runner, emit=emit, clock=clock)
         for line in format_summary(results):
             emit(line)

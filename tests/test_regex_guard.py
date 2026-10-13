@@ -355,11 +355,22 @@ def _random_pattern(rng: random.Random) -> str:
     return pattern
 
 
-def test_generated_accepted_patterns_are_inside_the_budget_and_widths_are_sound() -> None:
+@pytest.mark.parametrize(
+    ("count", "min_accepted", "min_refused"),
+    [
+        # The default gate draws the first 300 patterns of the seeded sequence; the full gate and CI
+        # draw all 1500 (measured: 276 / 24 and 1375 / 125 accepted / refused).
+        pytest.param(300, 200, 10, id="300"),
+        pytest.param(1500, 250, 50, id="1500", marks=pytest.mark.slow),
+    ],
+)
+def test_generated_accepted_patterns_are_inside_the_budget_and_widths_are_sound(
+    count: int, min_accepted: int, min_refused: int
+) -> None:
     rng = random.Random(20261012)
     accepted = 0
     refused = 0
-    for _ in range(1500):
+    for _ in range(count):
         source = _random_pattern(rng)
         try:
             pattern = compile_pattern(source)
@@ -377,8 +388,8 @@ def test_generated_accepted_patterns_are_inside_the_budget_and_widths_are_sound(
             text = bytes(rng.choice(b"ab7-_cA09z") for _ in range(rng.randint(0, 40)))
             for found in probe.finditer(text):
                 assert pattern.width_min <= found.end() - found.start() <= pattern.width_max
-    assert accepted > 250
-    assert refused > 50  # the generator does produce hostile shapes
+    assert accepted > min_accepted
+    assert refused > min_refused  # the generator does produce hostile shapes
 
 
 def test_only_compile_pattern_makes_a_guarded_pattern() -> None:

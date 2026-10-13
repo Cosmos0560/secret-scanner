@@ -122,9 +122,21 @@ def test_control_characters_are_refused() -> None:
     assert isinstance(_refused("a: \x07bell\n"), ConfigError)
 
 
-def test_deep_nesting_is_refused_not_a_crash() -> None:
-    assert "nested too deeply" in str(_refused("[" * 3_000))
-    assert isinstance(_parse("a: " + "[" * 100 + "]" * 100), dict)  # sane nesting still loads
+@pytest.mark.parametrize(
+    "depth",
+    [
+        # Any depth past the interpreter's recursion limit takes the same path. 600 levels are
+        # enough and cheap; 3000 (about 3 s under coverage) runs in the full gate and CI.
+        pytest.param(600, id="600"),
+        pytest.param(3_000, id="3000", marks=pytest.mark.slow),
+    ],
+)
+def test_deep_nesting_is_refused_not_a_crash(depth: int) -> None:
+    assert "nested too deeply" in str(_refused("[" * depth))
+
+
+def test_sane_nesting_still_loads() -> None:
+    assert isinstance(_parse("a: " + "[" * 100 + "]" * 100), dict)
 
 
 def test_yaml_1_1_surprises_come_back_as_non_strings() -> None:

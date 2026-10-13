@@ -10,7 +10,7 @@ import os
 import shutil
 import socket
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -36,30 +36,53 @@ def _blocked(*args: object, **kwargs: object) -> object:
     raise NetworkBlockedError("network access is blocked in tests")
 
 
-@pytest.fixture(autouse=True)
-def _isolated_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.fixture(scope="session")
+def isolated_home(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The one directory every per-user location points at for the whole session."""
+    return tmp_path_factory.mktemp("isolated-home")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _isolated_environment(isolated_home: Path) -> Iterator[None]:
     """Point every per-user location at a temporary directory, so no test can read or write the
-    real home, application data or configuration of the person running the suite."""
-    home = tmp_path / "isolated-home"
-    home.mkdir()
+    real home, application data or configuration of the person running the suite.
+
+    Done once per session (the per-test cost of a fresh directory and five `setenv` calls was a
+    large part of the default gate's time); `_per_test_guards` proves after each test that nothing
+    was written there. A test that changes one of these variables uses `monkeypatch`, which puts
+    the session value back."""
+    saved = {name: os.environ.get(name) for name in ISOLATED_ENVIRONMENT}
     for name in ISOLATED_ENVIRONMENT:
-        monkeypatch.setenv(name, str(home))
+        os.environ[name] = str(isolated_home)
+    try:
+        yield
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
-@pytest.fixture(autouse=True)
-def _no_network(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make every socket call fail (CLAUDE.md section 5, invariant 2)."""
-    monkeypatch.setattr(socket, "socket", _BlockedSocket)
-    for name in (
-        "create_connection",
-        "create_server",
-        "getaddrinfo",
-        "gethostbyname",
-        "gethostbyname_ex",
-        "gethostbyaddr",
-        "socketpair",
-    ):
-        monkeypatch.setattr(socket, name, _blocked)
+_SOCKET_FUNCTIONS = (
+    "create_connection",
+    "create_server",
+    "getaddrinfo",
+    "gethostbyname",
+    "gethostbyname_ex",
+    "gethostbyaddr",
+    "socketpair",
+)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _no_network() -> Iterator[None]:
+    """Make every socket call fail for the whole session (CLAUDE.md section 5, invariant 2)."""
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(socket, "socket", _BlockedSocket)
+        for name in _SOCKET_FUNCTIONS:
+            patch.setattr(socket, name, _blocked)
+        yield
 
 
 # -- the path guard (CLAUDE.md section 7) ---------------------------------------------------
@@ -131,13 +154,35 @@ def _path_guard_base(tmp_path_factory: pytest.TempPathFactory) -> None:
     PathGuardState.base = os.path.normcase(os.path.realpath(tmp_path_factory.getbasetemp()))
 
 
+def check_isolated_home_is_empty(home: Path) -> None:
+    """Fail when a test left anything in the isolated home; the leftovers are removed first, so one
+    offender does not fail every later test."""
+    leftovers = os.listdir(home)
+    if not leftovers:
+        return
+    for name in leftovers:
+        path = home / name
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path, ignore_errors=True)
+        else:
+            path.unlink(missing_ok=True)
+    pytest.fail(
+        f"the test wrote {len(leftovers)} entr{'y' if len(leftovers) == 1 else 'ies'} into "
+        "the isolated home directory",
+        pytrace=False,
+    )
+
+
 @pytest.fixture(autouse=True)
-def _path_guard_marker(request: pytest.FixtureRequest) -> Any:
+def _per_test_guards(request: pytest.FixtureRequest, isolated_home: Path) -> Iterator[None]:
+    """Per-test guards: the repository-reading marker for the path guard, and a check that the
+    test left nothing in the isolated home."""
     PathGuardState.allow_repository = (
         request.node.get_closest_marker("reads_repository") is not None
     )
     yield
     PathGuardState.allow_repository = False
+    check_isolated_home_is_empty(isolated_home)
 
 
 def leak_check(

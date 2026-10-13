@@ -3,7 +3,10 @@
 exception text (CLAUDE.md section 5, invariant 1; PLAN.md D7, D16).
 
 Every built-in rule, the private key detector and the entropy detector are exercised through
-every output path that exists in this phase."""
+every output path that exists in this phase. The full matrix (every rule through every format and
+every error path) is the slow run, which the full gate and CI execute; the default gate runs one
+representative of each detector kind through the whole matrix, and every rule through the table
+and the JSON renderer."""
 
 from __future__ import annotations
 
@@ -18,12 +21,16 @@ import pytest
 from secret_scanner.app import scan as scan_module
 from secret_scanner.cli import main as cli_main
 from secret_scanner.core.fakes import build_fake, fake_entropy_token, fake_private_key
-from secret_scanner.core.models import Detector
+from secret_scanner.core.models import Confidence, Detector, OutputFormat
 from secret_scanner.services.loader import dump_yaml, load_builtin_rules
 from tests.conftest import leak_check
+from tests.helpers import FakeClock
 
 SEED = "leak"
 ENTROPY_SHOWN = 4
+# One representative per detector kind (rule, private key, entropy) runs the whole matrix in the
+# default gate; the other rules run it as `slow` tests.
+REPRESENTATIVES = frozenset({"aws-access-key-id", "private-key", "entropy-base64"})
 
 
 @dataclass(frozen=True)
@@ -65,6 +72,18 @@ def test_every_rule_has_a_planted_secret() -> None:
     }
     assert rule_ids <= names
     assert "entropy-base64" in names
+    assert names >= REPRESENTATIVES
+
+
+def _matrix_cases() -> list[Any]:
+    return [
+        pytest.param(
+            planted,
+            id=planted.name,
+            marks=() if planted.name in REPRESENTATIVES else pytest.mark.slow,
+        )
+        for planted in PLANTED
+    ]
 
 
 class Capture:
@@ -92,7 +111,7 @@ def _write(path: Path, document: dict[str, Any]) -> str:
     return str(path)
 
 
-@pytest.mark.parametrize("planted", PLANTED, ids=lambda p: p.name)
+@pytest.mark.parametrize("planted", _matrix_cases())
 def test_nothing_that_scan_emits_contains_the_secret(
     tmp_path: Path,
     run_cli: Callable[..., tuple[int, str, str]],
@@ -208,6 +227,26 @@ def test_nothing_that_scan_emits_contains_the_secret(
             pytest.fail(f"{planted.name} / {label}: {problem}", pytrace=False)
     # the tool never touched the tree: only the planted file is there
     assert [p.name for p in root.iterdir()] == ["settings.txt"]
+
+
+@pytest.mark.parametrize("planted", PLANTED, ids=lambda p: p.name)
+def test_the_table_and_the_json_of_every_rule_carry_no_secret(
+    tmp_path: Path, planted: Planted
+) -> None:
+    """Every rule's fake through the two renderers, in-process (the CLI matrix above covers the
+    other output paths for one representative of each detector kind)."""
+    root = tmp_path / "tree"
+    root.mkdir()
+    (root / "settings.txt").write_text(planted.file_text, encoding="utf-8", newline="\n")
+    for output_format in (OutputFormat.TABLE, OutputFormat.JSON):
+        request = scan_module.ScanRequest(
+            path=str(root), output_format=output_format, min_confidence=Confidence.LOW
+        )
+        outcome = scan_module.run_scan(request, FakeClock())
+        assert outcome.report.findings, f"{planted.name}: nothing detected"
+        problem = leak_check(outcome.text, planted.needle, allowed_shown=planted.allowed_shown)
+        if problem is not None:
+            pytest.fail(f"{planted.name} / {output_format.value}: {problem}", pytrace=False)
 
 
 @pytest.mark.parametrize("planted", PLANTED[:3], ids=lambda p: p.name)
