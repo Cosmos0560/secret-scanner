@@ -23,10 +23,8 @@ from dataclasses import dataclass
 
 from secret_scanner.core.errors import ConfigError
 from secret_scanner.core.limits import DEFAULT_LIMITS, Limits
-from secret_scanner.core.sanitize import sanitize
 
 GLOBSTAR = "**"
-_SHOWN_CHARS = 60
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,11 +104,13 @@ def _segment_matches(pattern: SegmentPattern, text: str) -> bool:
     return p == size
 
 
-def _refuse(source: str, reason: str) -> ConfigError:
-    return ConfigError(f"glob {sanitize(source, max_chars=_SHOWN_CHARS)!r}: {reason}")
+def _refuse(reason: str) -> ConfigError:
+    # The pattern itself is not echoed: a mistyped entry can be a pasted secret, and error text
+    # reaches terminals and CI logs. `compile_globs` adds the position of the entry instead.
+    return ConfigError(f"glob {reason}")
 
 
-def _parse_set(source: str, text: str, start: int) -> tuple[_Item, int]:
+def _parse_set(text: str, start: int) -> tuple[_Item, int]:
     """Parse a `[...]` set starting at `text[start] == "["`; return the item and the index after
     its closing bracket."""
     position = start + 1
@@ -128,16 +128,16 @@ def _parse_set(source: str, text: str, start: int) -> tuple[_Item, int]:
         if position + 2 < len(text) and text[position + 1] == "-" and text[position + 2] != "]":
             low, high = ord(char), ord(text[position + 2])
             if low > high:
-                raise _refuse(source, "a set range runs backwards")
+                raise _refuse("a set range runs backwards")
             ranges.append((low, high))
             position += 3
         else:
             ranges.append((ord(char), ord(char)))
             position += 1
-    raise _refuse(source, "a set is not closed")
+    raise _refuse("a set is not closed")
 
 
-def _parse_segment(source: str, text: str) -> SegmentPattern:
+def _parse_segment(text: str) -> SegmentPattern:
     items: list[_Item] = []
     position = 0
     while position < len(text):
@@ -150,7 +150,7 @@ def _parse_segment(source: str, text: str) -> SegmentPattern:
             items.append(_Item("any"))
             position += 1
         elif char == "[":
-            item, position = _parse_set(source, text, position)
+            item, position = _parse_set(text, position)
             items.append(item)
         else:
             items.append(_Item("lit", char=char))
@@ -159,26 +159,26 @@ def _parse_segment(source: str, text: str) -> SegmentPattern:
 
 
 def compile_glob(source: str, limits: Limits = DEFAULT_LIMITS) -> Glob:
-    """Compile one pattern or raise `ConfigError` naming the reason (never the whole pattern)."""
+    """Compile one pattern or raise `ConfigError` naming the reason (never the pattern)."""
     if not isinstance(source, str):
         raise ConfigError("glob must be a string")
     if not source:
-        raise _refuse(source, "is empty")
+        raise _refuse("is empty")
     if len(source) > limits.max_glob_chars:
-        raise _refuse(source, f"is longer than {limits.max_glob_chars} characters")
+        raise _refuse(f"is longer than {limits.max_glob_chars} characters")
     if any(ord(char) < 0x20 or ord(char) == 0x7F for char in source):
-        raise _refuse(source, "contains a control character")
+        raise _refuse("contains a control character")
     if "\\" in source:
-        raise _refuse(source, "contains a backslash (use / as the separator)")
+        raise _refuse("contains a backslash (use / as the separator)")
     if source.startswith("/"):
-        raise _refuse(source, "must be relative (no leading /)")
+        raise _refuse("must be relative (no leading /)")
     segments: list[SegmentPattern | None] = []
     for text in source.split("/"):
         if text == "":
-            raise _refuse(source, "has an empty segment")
+            raise _refuse("has an empty segment")
         if text in {".", ".."}:
-            raise _refuse(source, f"has a {text!r} segment")
-        segments.append(None if text == GLOBSTAR else _parse_segment(source, text))
+            raise _refuse(f"has a {text!r} segment")
+        segments.append(None if text == GLOBSTAR else _parse_segment(text))
     return Glob(source, tuple(segments))
 
 
@@ -189,7 +189,13 @@ def compile_globs(
     items = list(sources)
     if len(items) > limits.max_globs:
         raise ConfigError(f"{what}: more than {limits.max_globs} globs")
-    return tuple(compile_glob(item, limits) for item in items)
+    compiled: list[Glob] = []
+    for index, item in enumerate(items):
+        try:
+            compiled.append(compile_glob(item, limits))
+        except ConfigError as error:
+            raise ConfigError(f"{what}[{index}]: {error}") from None
+    return tuple(compiled)
 
 
 def any_match(globs: Sequence[Glob], path: str) -> bool:

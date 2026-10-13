@@ -134,3 +134,9 @@ def test_pathological_patterns_stay_polynomial() -> None:
 def test_a_path_with_many_segments_and_a_leading_globstar() -> None:
     assert compile_glob("**/z").matches("/".join(["a"] * 500 + ["z"]))
     assert not compile_glob("z/**").matches("/".join(["a"] * 500 + ["z"]))
+
+
+def test_a_refused_entry_is_named_by_position_and_never_echoed() -> None:
+    with pytest.raises(ConfigError) as caught:
+        compile_globs(["ok", "token_" + "A1b2C3" * 5 + "/../x"], what="config.exclude")
+    assert str(caught.value) == "config.exclude[1]: glob has a '..' segment"
