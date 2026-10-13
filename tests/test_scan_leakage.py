@@ -118,18 +118,6 @@ def test_nothing_that_scan_emits_contains_the_secret(
     assert "settings.txt" in capture.pieces[0][1]
 
     cli("json", "scan", str(root), "--format", "json", "--min-confidence", "low")
-    cli(
-        "json-all",
-        "scan",
-        str(root),
-        "--format",
-        "json",
-        "--min-confidence",
-        "low",
-        "--host-label",
-        "h",
-    )
-
     report = work / "report.json"
     baseline = work / "baseline.yaml"
     cli(

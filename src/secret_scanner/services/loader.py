@@ -12,6 +12,7 @@ Error messages carry a fixed reason and a position, never content.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 from collections.abc import Hashable
 from dataclasses import dataclass
@@ -126,7 +127,13 @@ def load_rules_from_bytes(
     return RuleSet(rules=rules, sha256=hashlib.sha256(data).hexdigest())
 
 
-def load_builtin_rules(limits: Limits = DEFAULT_LIMITS) -> RuleSet:
-    """The built-in rules, read from the package data."""
+@functools.lru_cache(maxsize=4)
+def _builtin_rules(limits: Limits) -> RuleSet:
     resource = resources.files(BUILTIN_RULES_PACKAGE) / BUILTIN_RULES_DIRECTORY / BUILTIN_RULES_FILE
     return load_rules_from_bytes(resource.read_bytes(), limits=limits, what="built-in rules")
+
+
+def load_builtin_rules(limits: Limits = DEFAULT_LIMITS) -> RuleSet:
+    """The built-in rules, read from the package data. The file cannot change while the process
+    runs, and `RuleSet` is immutable, so the parsed result is kept per limits value."""
+    return _builtin_rules(limits)

@@ -479,3 +479,15 @@ def test_shown_chars_beyond_a_quarter_of_the_minimum_length_is_refused() -> None
         parse_rule(rule, "rules[0]")
     rule["shown_chars"] = 4
     assert parse_rule(rule, "rules[0]").shown_chars == 4
+
+
+def test_the_built_in_rules_are_parsed_once_per_limits_value() -> None:
+    from secret_scanner.core.limits import DEFAULT_LIMITS
+    from secret_scanner.services.loader import load_builtin_rules
+
+    assert load_builtin_rules() is load_builtin_rules()
+    assert load_builtin_rules() is load_builtin_rules(DEFAULT_LIMITS)
+    lowered = DEFAULT_LIMITS.with_overrides({"max_rules": 100})
+    other = load_builtin_rules(lowered)
+    assert other is not load_builtin_rules()
+    assert other.sha256 == load_builtin_rules().sha256
