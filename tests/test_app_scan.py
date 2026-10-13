@@ -513,3 +513,21 @@ def test_both_formats_render_the_same_findings(
     assert "npm-token" in table
     for text in (table, json.dumps(document)):
         assert_not_leaked(text, token, allowed_shown=len("npm_"))
+
+
+def test_a_baseline_written_by_an_incomplete_run_says_so(root: Path, work: Path) -> None:
+    put(root, "a.txt", fake("npm-token"))
+    put(root, "b.txt", "plain")
+
+    def failing(path: str, info: os.stat_result, limit: int) -> bytes | ReadFailure:
+        if Path(path).name == "b.txt":
+            return ReadFailure(IssueKind.UNREADABLE, "read: permission denied")
+        return Path(path).read_bytes()
+
+    baseline = str(work / "b.yaml")
+    outcome = run_scan(
+        ScanRequest(path=str(root), write_baseline=baseline), FakeClock(), reader=failing
+    )
+    assert outcome.exit_code is ExitCode.INCOMPLETE
+    assert "the run was incomplete" in outcome.notices[0]
+    assert Path(baseline).exists()
