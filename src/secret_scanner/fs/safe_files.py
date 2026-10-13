@@ -188,3 +188,9 @@ def is_inside(root: str, candidate: str) -> bool:
         return os.path.commonpath([resolved_root, resolved]) == resolved_root
     except ValueError:  # different drives
         return False
+
+
+def is_same_path(first: str, second: str) -> bool:
+    """True when both paths (which need not exist) name the same place after resolving links and
+    normalising case. Used to keep an output from overwriting a file the run reads or writes."""
+    return os.path.normcase(os.path.realpath(first)) == os.path.normcase(os.path.realpath(second))

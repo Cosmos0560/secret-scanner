@@ -359,3 +359,13 @@ def test_is_inside_with_paths_on_different_drives_is_false(
 
     monkeypatch.setattr(os.path, "commonpath", raising)
     assert not is_inside(str(tmp_path), str(tmp_path / "x"))
+
+
+def test_is_same_path_compares_resolved_locations(tmp_path: Path) -> None:
+    from secret_scanner.fs.safe_files import is_same_path
+
+    (tmp_path / "sub").mkdir()
+    first = tmp_path / "out.txt"
+    assert is_same_path(str(first), str(tmp_path / "sub" / ".." / "out.txt"))
+    assert not is_same_path(str(first), str(tmp_path / "sub" / "out.txt"))
+    assert not is_same_path(str(first), str(tmp_path / "other.txt"))

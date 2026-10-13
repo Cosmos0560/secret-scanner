@@ -219,3 +219,9 @@ def test_report_target_display_must_be_escaped() -> None:
     assert Report(target_display="dir/ok", **kwargs).target_display == "dir/ok"  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="target_display"):
         Report(target_display="bad\nname", **kwargs)  # type: ignore[arg-type]
+
+
+def test_output_formats_are_the_documented_ones() -> None:
+    from secret_scanner.core.models import OutputFormat
+
+    assert [fmt.value for fmt in OutputFormat] == ["table", "json"]  # jsonl, sarif: Phase 5

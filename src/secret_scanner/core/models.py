@@ -60,6 +60,13 @@ class Target(StrEnum):
     GIT = "git"
 
 
+class OutputFormat(StrEnum):
+    """Report formats (PLAN.md D11); `jsonl` and `sarif` arrive with Phase 5."""
+
+    TABLE = "table"
+    JSON = "json"
+
+
 class SuppressedBy(StrEnum):
     FINGERPRINT = "fingerprint"
     PATH = "path"

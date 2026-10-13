@@ -80,6 +80,7 @@ GUARDED_FUNCTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "write_new_file": ("path",),
         "check_output_target": ("path",),
         "is_inside": ("root", "candidate"),
+        "is_same_path": ("first", "second"),
     },
 }
 
