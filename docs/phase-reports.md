@@ -268,3 +268,20 @@ Real coverage: 99.79% (branch, full gate, Windows, commit 5c50f1b); 99.94% in th
 Known gaps: no git scanning yet (Phase 4); JSONL, SARIF, demo and rules command in Phase 5; PATH with .. refused; control-character names tested only on POSIX; default gate 62.5 s against a 60 s target (48 s to 110 s observed); CI has not run the commits after e1d2368
 Deviations from PLAN.md: --write-baseline in Phase 3 (accepted, v0.7); awaiting acceptance (v0.8): exit code unchanged by --write-baseline, written baseline content, no echo of keys or globs in errors, extra output-file refusals, host label and notices wiring, OutputFormat model and rules cache, doubled backslashes in escaped output
 ```
+
+## Phase 4 - Git history scan (2026-10-13)
+
+### Owner decisions at the start of the session (PLAN.md v0.9, accepted)
+
+1. The Phase 3 interpretations (PLAN.md v0.8, items 1 to 6) are accepted. Item 7 (doubled
+   backslashes in escaped output) is replaced by a decision: in the table and every other
+   human-readable output, paths are shown relative to the scan root with `/` separators and
+   escaped per component, so a Windows path never shows doubled backslashes; JSON keeps standard
+   JSON string encoding.
+   Done with `core/sanitize.sanitize_path`. A path the user gave (scan root, `--output`,
+   `--write-baseline`) is shown as given with `/` on Windows; finding and issue paths were
+   relative `/` keys already; on POSIX a backslash is a name character and stays escaped. The JSON
+   `target.path` carries the same display form (no schema change). Tests: `sanitize_path` unit
+   tests, refused-path messages for both flavours, and a CLI test that the table holds no doubled
+   backslash (on Windows the scan root and output path really hold backslashes).
+

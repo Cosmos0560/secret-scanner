@@ -159,3 +159,19 @@ def test_native_flavour_follows_sys_platform_values() -> None:
     assert native_flavour("win32") is Flavour.WINDOWS
     assert native_flavour("linux") is Flavour.POSIX
     assert native_flavour("darwin") is Flavour.POSIX
+
+
+def test_a_refused_windows_path_is_shown_with_forward_slashes() -> None:
+    refused = chr(92).join(["C:", "Users", "dev", "..", "x"])
+    with pytest.raises(PathRuleError) as caught:
+        validate_user_path(refused, Flavour.WINDOWS)
+    assert "C:/Users/dev/../x" in str(caught.value)
+    assert chr(92) * 2 not in str(caught.value)
+
+
+def test_a_refused_posix_path_keeps_its_backslash_escaped() -> None:
+    with pytest.raises(PathRuleError) as caught:
+        validate_user_path("a" + chr(92) + "b/../c", Flavour.POSIX)
+    # The backslash is a name character on POSIX: it is escaped, never shown as a separator.
+    assert "a" + chr(92) + "b" not in str(caught.value)
+    assert "a/b" not in str(caught.value)

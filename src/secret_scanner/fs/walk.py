@@ -31,7 +31,7 @@ from secret_scanner.core.errors import UsageError
 from secret_scanner.core.globs import Glob, any_match
 from secret_scanner.core.limits import DEFAULT_LIMITS, Limits
 from secret_scanner.core.models import IssueKind
-from secret_scanner.core.sanitize import sanitize
+from secret_scanner.core.sanitize import sanitize, sanitize_path
 
 DEFAULT_EXCLUDED_DIRECTORIES = frozenset(
     {
@@ -190,7 +190,7 @@ def read_regular_file(path: str, expected: os.stat_result, max_bytes: int) -> by
 def check_scan_root(root: str) -> None:
     """Refuse a scan root that is not a real directory. A link as the last component is refused
     rather than followed, so the tree that is scanned is the one that was named."""
-    shown = sanitize(root, max_chars=_SHOWN_PATH_CHARS)
+    shown = sanitize_path(root, windows=sys.platform == "win32", max_chars=_SHOWN_PATH_CHARS)
     try:
         info = os.lstat(root)
     except FileNotFoundError:

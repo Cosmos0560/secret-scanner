@@ -18,6 +18,7 @@ form of a C1 control.
 from __future__ import annotations
 
 import unicodedata
+from collections.abc import Iterable
 
 ELLIPSIS = "..."
 
@@ -77,22 +78,16 @@ def _render(char: str, ascii_only: bool) -> str:
     return char
 
 
-def sanitize(text: str, *, max_chars: int | None = None, ascii_only: bool = False) -> str:
-    """Return `text` made safe to display.
-
-    `max_chars` bounds the length of the result (an escape sequence is never cut in half; a cut
-    result ends with `...`). `ascii_only` also escapes every printable non-ASCII character, as
-    needed for strings that go into JSON-bound fields.
-    """
+def _bounded(rendered: Iterable[str], max_chars: int | None) -> str:
+    """Join already escaped pieces, cut at `max_chars` without splitting a piece."""
     if max_chars is None:
-        return "".join(_render(char, ascii_only) for char in text)
+        return "".join(rendered)
     if max_chars < len(ELLIPSIS):
         raise ValueError("max_chars is smaller than the truncation marker")
     # Stop at the first piece that does not fit, so a huge input costs at most max_chars of work.
     pieces: list[str] = []
     used = 0
-    for char in text:
-        piece = _render(char, ascii_only)
+    for piece in rendered:
         if used + len(piece) > max_chars:
             break
         pieces.append(piece)
@@ -108,6 +103,32 @@ def sanitize(text: str, *, max_chars: int | None = None, ascii_only: bool = Fals
         kept.append(piece)
         total += len(piece)
     return "".join(kept) + ELLIPSIS
+
+
+def sanitize(text: str, *, max_chars: int | None = None, ascii_only: bool = False) -> str:
+    """Return `text` made safe to display.
+
+    `max_chars` bounds the length of the result (an escape sequence is never cut in half; a cut
+    result ends with `...`). `ascii_only` also escapes every printable non-ASCII character, as
+    needed for strings that go into JSON-bound fields.
+    """
+    return _bounded((_render(char, ascii_only) for char in text), max_chars)
+
+
+def sanitize_path(
+    path: str, *, windows: bool, max_chars: int | None = None, ascii_only: bool = False
+) -> str:
+    """Return a user-given or scanned path made safe to display, with `/` separators.
+
+    A path is shown as a list of escaped components joined by `/` (PLAN.md v0.9). With `windows`
+    set, `\\` is a separator, as it is in a Windows path, and shown as `/`, so a Windows path
+    never appears with doubled backslashes. Without it (POSIX), `\\` is an ordinary character of a
+    name and is escaped like any other, so the output stays unambiguous. `/` is never altered.
+    """
+    return _bounded(
+        ("/" if windows and char == "\\" else _render(char, ascii_only) for char in path),
+        max_chars,
+    )
 
 
 def is_display_safe(text: str) -> bool:

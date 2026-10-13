@@ -24,14 +24,14 @@ import sys
 
 from secret_scanner.core.entries import EntryKind, classify_stat
 from secret_scanner.core.errors import ScanIOError
-from secret_scanner.core.sanitize import sanitize
+from secret_scanner.core.sanitize import sanitize_path
 
 _SHOWN_PATH_CHARS = 120
 _TEMP_SUFFIX = ".tmp"
 
 
 def _shown(path: str) -> str:
-    return sanitize(path, max_chars=_SHOWN_PATH_CHARS)
+    return sanitize_path(path, windows=sys.platform == "win32", max_chars=_SHOWN_PATH_CHARS)
 
 
 def _errno_name(error: OSError) -> str:

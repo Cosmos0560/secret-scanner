@@ -66,6 +66,23 @@ def write_yaml(path: Path, document: dict[str, Any]) -> str:
 # -- the command ------------------------------------------------------------------------------
 
 
+def test_table_output_never_shows_a_doubled_backslash(root: Path, work: Path, cli: Cli) -> None:
+    """On Windows the scan root and the --output path hold real backslashes: the table shows them
+    as `/` (PLAN.md v0.9). On POSIX the same assertion holds for ordinary names."""
+    put(root, "src/app/settings.py", f"TOKEN = '{fake('npm-token')}'\n")
+    target = work / "r.txt"
+    code, out, err = cli("scan", str(root), "--output", str(target))
+    report = target.read_text("utf-8")
+    assert code == ExitCode.FINDINGS
+    assert out == ""
+    assert "src/app/settings.py:1:10" in report
+    assert chr(92) * 2 not in report
+    assert chr(92) * 2 not in err
+    if sys.platform == "win32":
+        assert chr(92) not in report
+        assert "/" in report.splitlines()[0]
+
+
 def test_scan_prints_the_table_on_stdout_and_nothing_on_stderr(root: Path, cli: Cli) -> None:
     put(root, "src/app.py", f"TOKEN = '{fake('npm-token')}'\n")
     code, out, err = cli("scan", str(root))

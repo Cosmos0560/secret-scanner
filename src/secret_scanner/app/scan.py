@@ -36,7 +36,7 @@ from secret_scanner.core.models import (
     Target,
 )
 from secret_scanner.core.pathrules import native_flavour, validate_user_path
-from secret_scanner.core.sanitize import sanitize
+from secret_scanner.core.sanitize import sanitize_path
 from secret_scanner.core.suppress import (
     apply_suppressions,
     baseline_document,
@@ -91,8 +91,12 @@ class ScanOutcome:
     notices: tuple[str, ...] = ()
 
 
+def _display_path(path: str, max_chars: int) -> str:
+    return sanitize_path(path, windows=sys.platform == "win32", max_chars=max_chars)
+
+
 def _shown(path: str) -> str:
-    return sanitize(path, max_chars=_NOTICE_PATH_CHARS)
+    return _display_path(path, _NOTICE_PATH_CHARS)
 
 
 def _validate_paths(request: ScanRequest) -> None:
@@ -195,7 +199,7 @@ def run_scan(
     complete = result.complete
     report = Report(
         target=Target.FS,
-        target_display=sanitize(request.path, max_chars=_SHOWN_PATH_CHARS),
+        target_display=_display_path(request.path, _SHOWN_PATH_CHARS),
         findings=tuple(sorted(shown, key=finding_sort_key)),
         suppressed_by_fingerprint=split.by_fingerprint,
         suppressed_by_path=split.by_path,

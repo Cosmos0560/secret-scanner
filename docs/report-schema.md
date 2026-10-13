@@ -108,10 +108,16 @@ File names, paths and every other string taken from the scanned input are hostil
 before they reach any output. Control characters (so ANSI sequences are inert), DEL, C1 controls,
 bidirectional and zero-width characters, line and paragraph separators, byte-order marks and lone
 surrogates (an invalid byte in a POSIX name) become `\xNN`, `\uNNNN` or `\UNNNNNNNN`; a tab, line
-feed and carriage return become `\t`, `\n`, `\r`; and a backslash becomes `\\`, so an escape sequence
-in the output always came from the tool. On Windows a path therefore shows its separators doubled.
-In JSON the escaped text is then encoded as a JSON string, so the characters `\\` in a name appear
-as `\\\\` in the document.
+feed and carriage return become `\t`, `\n`, `\r`; and a backslash inside a name becomes `\\`, so an
+escape sequence in the output always came from the tool.
+
+Paths are shown as components joined by `/`, each component escaped on its own (PLAN.md v0.9).
+Finding and issue paths are relative to the scan root and already use `/`. A path the user gave
+(the scan root in the table header and in `target.path`, the `--output` and `--write-baseline`
+paths in notices and error messages) is shown with `/` on Windows, where `\` is a separator, so a
+Windows path never appears with doubled backslashes. On POSIX a backslash is an ordinary character
+of a name and stays escaped as `\\`. In JSON the displayed text is encoded as a standard JSON
+string, so a `\\` that is part of a POSIX name appears as `\\\\` in the document.
 
 ## Exit codes
 

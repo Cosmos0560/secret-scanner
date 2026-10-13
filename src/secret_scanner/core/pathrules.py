@@ -16,7 +16,7 @@ from enum import StrEnum
 
 from secret_scanner.core.errors import UsageError
 from secret_scanner.core.limits import MAX_PATH_CHARS
-from secret_scanner.core.sanitize import sanitize
+from secret_scanner.core.sanitize import sanitize_path
 
 _SHOWN_PATH_CHARS = 80
 
@@ -46,8 +46,8 @@ class PathRule(StrEnum):
 class PathRuleError(UsageError):
     """A user-supplied path the tool refuses. Carries the rule that refused it."""
 
-    def __init__(self, rule: PathRule, path: str) -> None:
-        shown = sanitize(path, max_chars=_SHOWN_PATH_CHARS)
+    def __init__(self, rule: PathRule, path: str, *, windows: bool = False) -> None:
+        shown = sanitize_path(path, windows=windows, max_chars=_SHOWN_PATH_CHARS)
         super().__init__(f"path refused ({rule.value}): {shown}")
         self.rule = rule
 
@@ -96,40 +96,41 @@ def _check_windows(path: str) -> None:
     if normalized.startswith("//"):
         rest = normalized[2:]
         if rest[:1] in {".", "?"} and rest[1:2] in {"", "/"}:
-            raise PathRuleError(PathRule.DEVICE_NAMESPACE, path)
-        raise PathRuleError(PathRule.UNC, path)
+            raise PathRuleError(PathRule.DEVICE_NAMESPACE, path, windows=True)
+        raise PathRuleError(PathRule.UNC, path, windows=True)
     body = normalized
     if len(normalized) >= 2 and normalized[0].isalpha() and normalized[1] == ":":
         if len(normalized) == 2 or normalized[2] != "/":
-            raise PathRuleError(PathRule.DRIVE_RELATIVE, path)
+            raise PathRuleError(PathRule.DRIVE_RELATIVE, path, windows=True)
         body = normalized[2:]
     elif normalized.startswith("/"):
-        raise PathRuleError(PathRule.ROOTED_WITHOUT_DRIVE, path)
+        raise PathRuleError(PathRule.ROOTED_WITHOUT_DRIVE, path, windows=True)
     if ":" in body:
-        raise PathRuleError(PathRule.ALTERNATE_STREAM, path)
+        raise PathRuleError(PathRule.ALTERNATE_STREAM, path, windows=True)
     for component in body.split("/"):
         if component in {"", ".", ".."}:
             continue
         if component[-1] in {".", " "}:
-            raise PathRuleError(PathRule.TRAILING_DOT_OR_SPACE, path)
+            raise PathRuleError(PathRule.TRAILING_DOT_OR_SPACE, path, windows=True)
         stem = component.split(".", 1)[0].rstrip(" ").lower()
         if stem in _RESERVED_NAMES:
-            raise PathRuleError(PathRule.RESERVED_NAME, path)
+            raise PathRuleError(PathRule.RESERVED_NAME, path, windows=True)
 
 
 def validate_user_path(path: str, flavour: Flavour) -> str:
     """Return `path` unchanged if it is acceptable, else raise `PathRuleError`."""
+    windows = flavour is Flavour.WINDOWS
     if not path:
-        raise PathRuleError(PathRule.EMPTY, path)
+        raise PathRuleError(PathRule.EMPTY, path, windows=windows)
     if len(path) > MAX_PATH_CHARS:
-        raise PathRuleError(PathRule.TOO_LONG, path)
+        raise PathRuleError(PathRule.TOO_LONG, path, windows=windows)
     if _has_control_character(path):
-        raise PathRuleError(PathRule.CONTROL_CHARACTER, path)
+        raise PathRuleError(PathRule.CONTROL_CHARACTER, path, windows=windows)
     if _is_url_like(path):
-        raise PathRuleError(PathRule.URL_LIKE, path)
-    separators = "/\\" if flavour is Flavour.WINDOWS else "/"
+        raise PathRuleError(PathRule.URL_LIKE, path, windows=windows)
+    separators = "/\\" if windows else "/"
     if ".." in _split_components(path, separators):
-        raise PathRuleError(PathRule.PARENT_REFERENCE, path)
-    if flavour is Flavour.WINDOWS:
+        raise PathRuleError(PathRule.PARENT_REFERENCE, path, windows=windows)
+    if windows:
         _check_windows(path)
     return path

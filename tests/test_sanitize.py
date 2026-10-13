@@ -7,7 +7,7 @@ import unicodedata
 
 import pytest
 
-from secret_scanner.core.sanitize import ELLIPSIS, sanitize, sanitize_bytes
+from secret_scanner.core.sanitize import ELLIPSIS, sanitize, sanitize_bytes, sanitize_path
 
 BACKSLASH = chr(92)
 _ESCAPE = re.compile(r"\\(x[0-9a-f]{2}|u[0-9a-f]{4}|U[0-9a-f]{8}|[tnr\\])")
@@ -224,3 +224,38 @@ def test_require_display_safe_returns_safe_text_and_refuses_raw_text_without_ech
     with pytest.raises(ValueError, match="host label is not escaped") as caught:
         require_display_safe("a" + chr(0x1B) + "[31mINJECTED", "host label")
     assert "INJECTED" not in str(caught.value)
+
+
+# -- paths: separators and escaping per component (PLAN.md v0.9) -------------------------------
+
+
+def test_a_windows_path_is_shown_with_forward_slashes_and_no_doubled_backslash() -> None:
+    shown = sanitize_path(BACKSLASH.join(["C:", "Users", "dev", "repo", "config.py"]), windows=True)
+    assert shown == "C:/Users/dev/repo/config.py"
+    assert BACKSLASH * 2 not in shown
+    assert BACKSLASH not in shown
+
+
+def test_a_windows_relative_path_with_mixed_separators_is_shown_with_slashes() -> None:
+    shown = sanitize_path("src" + BACKSLASH + "app" + "/" + "config.py", windows=True)
+    assert shown == "src/app/config.py"
+
+
+def test_components_are_escaped_one_by_one_and_the_separator_is_not() -> None:
+    hostile = BACKSLASH.join(["a" + chr(0x1B) + "b", "c" + chr(0x202E), "d"])
+    shown = sanitize_path(hostile, windows=True)
+    assert shown == "a" + esc("x1b") + "b/c" + esc("u202e") + "/d"
+    assert chr(0x1B) not in shown
+
+
+def test_on_posix_a_backslash_is_a_name_character_and_stays_escaped() -> None:
+    assert sanitize_path("a" + BACKSLASH + "b/c", windows=False) == "a" + BACKSLASH * 2 + "b/c"
+
+
+def test_windows_path_display_honours_the_bound_and_ascii_only() -> None:
+    long_path = BACKSLASH.join(["dir"] * 40)
+    shown = sanitize_path(long_path, windows=True, max_chars=20)
+    assert len(shown) <= 20
+    assert shown.endswith(ELLIPSIS)
+    assert BACKSLASH not in shown
+    assert sanitize_path("caf" + chr(0xE9), windows=True, ascii_only=True) == "caf" + esc("xe9")

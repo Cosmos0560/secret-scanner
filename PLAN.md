@@ -874,8 +874,8 @@ phase report written. Tagging and pushing are yours.
      only on Windows are handled the way the gate already handles platform-specific code (combined
      Windows and WSL Linux coverage, or the existing pragma convention with a reason); the 85%
      floor is not lowered and there are no blanket exclusions.
-- v0.8 (2026-10-13): Phase 3 interpretations and additions, **awaiting acceptance** (details in
-  docs/phase-reports.md):
+- v0.8 (2026-10-13): Phase 3 interpretations and additions, **accepted by the owner on
+  2026-10-13 except item 7, which v0.9 replaces** (details in docs/phase-reports.md):
   1. Exit code with `--write-baseline`: unchanged from D10. A run that finds something still exits
      1 and the baseline it wrote is the way to accept those findings; D9 does not say otherwise.
   2. A written baseline holds the reported findings and the ones the given baseline already
@@ -893,4 +893,16 @@ phase report written. Tagging and pushing are yours.
      `--output` stdout stays empty.
   6. `OutputFormat` (table, json) is a core model; the built-in rules are parsed once per process.
   7. Escaped output doubles backslashes (sanitiser design, Phase 1), so a Windows path in a report
-     shows `\` separators. Documented in docs/report-schema.md.
+     shows `\` separators. Documented in docs/report-schema.md. **Not accepted; replaced by v0.9
+     item 1.**
+- v0.9 (2026-10-13): owner decisions at the start of the Phase 4 session, **accepted by the owner
+  on 2026-10-13**:
+  1. v0.8 items 1 to 6 are accepted. Item 7 is replaced: in the table and every other human-readable
+     output (notices, error messages), paths are shown relative to the scan root with `/`
+     separators and escaped per component, so a Windows path never shows doubled backslashes.
+     JSON keeps standard JSON string encoding. Implementation: `core/sanitize.py` gets `sanitize_path(path, windows=...)`; a path given by the
+     user (scan root, `--output`, `--write-baseline`) is shown as given with `/` on Windows, where
+     `\` is a separator; finding and issue paths were relative `/` keys already; on POSIX a
+     backslash is a name character and stays escaped; the JSON `target.path` carries the same
+     display form, and its encoding and the schema `secret-report/1` are unchanged.
+     A test asserts that table output holds no doubled backslash.

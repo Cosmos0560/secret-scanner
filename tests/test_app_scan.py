@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,7 @@ from secret_scanner.app.scan import ScanOutcome, ScanRequest, run_scan
 from secret_scanner.core.errors import ConfigError, ExitCode, ScanIOError, UsageError
 from secret_scanner.core.fakes import build_fake, fake_entropy_token
 from secret_scanner.core.models import Confidence, IssueKind, OutputFormat, Severity, SuppressedBy
-from secret_scanner.core.sanitize import sanitize
+from secret_scanner.core.sanitize import sanitize_path
 from secret_scanner.fs.walk import ReadFailure
 from secret_scanner.services.config import load_config
 from secret_scanner.services.loader import dump_yaml, load_builtin_rules
@@ -24,6 +25,11 @@ from tests.helpers import FakeClock
 
 RULES = {rule.id: rule for rule in load_builtin_rules().rules}
 BUILTIN_IDS = set(RULES)
+
+
+def display(path: str, max_chars: int | None = None) -> str:
+    """The display form of a path the way the application builds it (PLAN.md v0.9)."""
+    return sanitize_path(path, windows=sys.platform == "win32", max_chars=max_chars)
 
 
 def fake(rule_id: str, seed: str = "app") -> str:
@@ -127,7 +133,7 @@ def test_the_report_carries_version_rules_hash_and_clock_time(root: Path) -> Non
     assert outcome.report.tool_version == __version__
     assert outcome.report.generated_at == "2026-01-01T00:00:00Z"
     assert outcome.report.rules_sha256 == load_builtin_rules().sha256
-    assert outcome.report.target_display == sanitize(str(root))
+    assert outcome.report.target_display == display(str(root))
 
 
 # -- configuration ----------------------------------------------------------------------------
@@ -234,7 +240,7 @@ def test_baseline_round_trip_suppresses_exactly_what_was_written(root: Path, wor
     first = run(root, write_baseline=baseline)
     assert first.exit_code is ExitCode.FINDINGS  # writing a baseline does not excuse the run
     assert first.notices == (
-        f"baseline with 1 entries written to {sanitize(baseline, max_chars=120)}",
+        f"baseline with 1 entries written to {display(baseline, max_chars=120)}",
     )
     second = run(root, baseline=baseline)
     assert second.exit_code is ExitCode.OK
@@ -352,7 +358,7 @@ def test_the_report_is_written_atomically_and_not_over_an_existing_file(
     outcome = run(root, output_format=OutputFormat.JSON, output=str(out), host_label="ci")
     assert json.loads(out.read_text("ascii"))["host"] == "ci"
     assert outcome.text == out.read_text("ascii")
-    assert f"report written to {sanitize(str(out), max_chars=120)}" in outcome.notices
+    assert f"report written to {display(str(out), max_chars=120)}" in outcome.notices
     with pytest.raises(ScanIOError, match="already exists"):
         run(root, output_format=OutputFormat.JSON, output=str(out))
     assert out.read_text("ascii") == outcome.text  # untouched
