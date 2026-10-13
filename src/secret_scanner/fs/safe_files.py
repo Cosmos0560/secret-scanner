@@ -21,6 +21,7 @@ import errno
 import os
 import stat
 import sys
+from collections.abc import Sequence
 
 from secret_scanner.core.entries import EntryKind, classify_stat
 from secret_scanner.core.errors import ScanIOError
@@ -179,9 +180,7 @@ def write_new_file(path: str, data: bytes, *, force: bool = False) -> None:
     _flush_directory(directory)
 
 
-def is_inside(root: str, candidate: str) -> bool:
-    """True when `candidate` (which need not exist) resolves to a place inside the directory
-    `root`, after resolving links in both. Used to keep outputs out of a scanned tree."""
+def _resolved_inside(root: str, candidate: str) -> bool:
     resolved_root = os.path.normcase(os.path.realpath(root))
     resolved = os.path.normcase(os.path.realpath(candidate))
     try:
@@ -190,7 +189,62 @@ def is_inside(root: str, candidate: str) -> bool:
         return False
 
 
+def is_inside(root: str, candidate: str) -> bool:
+    """True when `candidate` (which need not exist) resolves to a place inside the directory
+    `root`, after resolving links in both. Used to keep outputs out of a scanned tree."""
+    return _resolved_inside(root, candidate)
+
+
 def is_same_path(first: str, second: str) -> bool:
     """True when both paths (which need not exist) name the same place after resolving links and
     normalising case. Used to keep an output from overwriting a file the run reads or writes."""
     return os.path.normcase(os.path.realpath(first)) == os.path.normcase(os.path.realpath(second))
+
+
+def find_program(
+    name: str, search_path: str, *, windows: bool, avoid: Sequence[str] = ()
+) -> str | None:
+    """The absolute path of the first regular file called `name` (`name.exe` on Windows) in the
+    entries of `search_path`, or None.
+
+    Only absolute entries are considered: an empty or relative entry means the current directory,
+    where a planted `git.exe` would otherwise be found first (CreateProcess searches it too), and
+    an entry inside any directory of `avoid` (the scanned tree) is never trusted either. A link is
+    followed, because system installations use them, but the target must be a regular file.
+    """
+    filename = name + ".exe" if windows else name
+    for entry in search_path.split(os.pathsep):
+        if not entry or not os.path.isabs(entry):
+            continue
+        if any(_resolved_inside(root, entry) for root in avoid):
+            continue
+        candidate = os.path.join(entry, filename)
+        try:
+            info = os.stat(candidate)
+        except OSError:
+            continue
+        if not stat.S_ISREG(info.st_mode):
+            continue
+        if not windows and not os.access(candidate, os.X_OK):
+            continue
+        return os.path.abspath(candidate)
+    return None
+
+
+def check_program(path: str, *, windows: bool, avoid: Sequence[str] = ()) -> str:
+    """Validate a program path given by the user (`--git PATH`): absolute, an existing regular
+    file, not inside a directory of `avoid`. Returns it unchanged; raises `ScanIOError`."""
+    shown = _shown(path)
+    if not os.path.isabs(path):
+        raise ScanIOError(f"program {shown}: must be an absolute path")
+    if any(_resolved_inside(root, path) for root in avoid):
+        raise ScanIOError(f"program {shown}: must not be inside the scanned tree")
+    try:
+        info = os.stat(path)
+    except OSError as error:
+        raise ScanIOError(f"program {shown}: cannot be examined ({_errno_name(error)})") from None
+    if not stat.S_ISREG(info.st_mode):
+        raise ScanIOError(f"program {shown}: is not a regular file")
+    if not windows and not os.access(path, os.X_OK):
+        raise ScanIOError(f"program {shown}: is not executable")
+    return path

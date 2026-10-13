@@ -60,6 +60,7 @@ class SkipReason(StrEnum):
     OFFLINE = "offline"
     SPECIAL = "special"
     EXCLUDED = "excluded"
+    GITIGNORED = "gitignored"  # not in git's own list of tracked and not-ignored files
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +106,10 @@ class WalkOptions:
     limits: Limits = DEFAULT_LIMITS
     excluded_directory_names: frozenset[str] = DEFAULT_EXCLUDED_DIRECTORIES
     exclude_globs: tuple[Glob, ...] = ()
+    # With `scan --gitignore` (PLAN.md D13): the `/` paths git listed. Only these files are read;
+    # a directory that holds none of them is not entered. The walker still does all the walking,
+    # type checking and limiting; git's list is a filter only.
+    only_paths: frozenset[str] | None = None
 
 
 @dataclass(slots=True)
@@ -113,6 +118,17 @@ class WalkCounters:
 
     entries: int = 0
     bytes_read: int = 0
+
+
+def directories_of(paths: frozenset[str]) -> frozenset[str]:
+    """Every directory prefix (`a`, `a/b`) of the given `/` paths."""
+    found: set[str] = set()
+    for path in paths:
+        position = path.find("/")
+        while position >= 0:
+            found.add(path[:position])
+            position = path.find("/", position + 1)
+    return frozenset(found)
 
 
 def _errno_name(error: OSError) -> str:
@@ -227,6 +243,8 @@ def walk_tree(
     """
     limits = options.limits
     windows = sys.platform == "win32"
+    only_files = options.only_paths
+    only_directories = directories_of(only_files) if only_files is not None else frozenset()
     # Each frame: (absolute directory path, key parts of the directory, remaining names)
     stack: list[tuple[str, tuple[str, ...], Iterator[str]]] = []
     listing = _list_directory(root)
@@ -270,6 +288,9 @@ def walk_tree(
             ):
                 yield Skipped(path_key, SkipReason.EXCLUDED)
                 continue
+            if only_files is not None and path_key not in only_directories:
+                yield Skipped(path_key, SkipReason.GITIGNORED)
+                continue
             if len(key_parts) > limits.max_depth:
                 yield Problem(
                     shown,
@@ -283,6 +304,9 @@ def walk_tree(
                 continue
             stack.append((path, key_parts, iter(children)))
         elif kind is EntryKind.REGULAR:
+            if only_files is not None and path_key not in only_files:
+                yield Skipped(path_key, SkipReason.GITIGNORED)
+                continue
             if any_match(options.exclude_globs, path_key):
                 yield Skipped(path_key, SkipReason.EXCLUDED)
                 continue
@@ -305,3 +329,95 @@ def walk_tree(
             yield Skipped(path_key, SkipReason.OFFLINE)
         else:
             yield Skipped(path_key, SkipReason.SPECIAL)
+
+
+# -- the layout of a git repository (PLAN.md D2: nothing outside the repository is followed) -----
+
+
+class GitDirKind(StrEnum):
+    STANDARD = "standard"  # `.git` is a directory
+    BARE = "bare"  # the path itself is a git directory
+    LINK_FILE = "link_file"  # `.git` is a file (`gitdir: ...`: a worktree or a submodule)
+    LINK = "link"  # `.git` is a symbolic link or reparse point
+    MISSING = "missing"  # neither
+
+
+@dataclass(frozen=True, slots=True)
+class RepositoryLayout:
+    """Facts about a repository directory that git itself would act on silently: where its git
+    directory is, whether it borrows objects from another place (`objects/info/alternates`) and
+    whether it rewrites history with a grafts file (`info/grafts`). All read with `lstat` and
+    bounded reads; nothing is followed or changed."""
+
+    kind: GitDirKind
+    git_dir: str | None  # the repository's own git directory (STANDARD, BARE)
+    alternates: bool
+    grafts: bool
+
+
+_LAYOUT_READ_BYTES = 64 * 1024
+
+
+def _has_entry_lines(path: str) -> bool:
+    """True when the file at `path` holds a line that is not blank and not a comment. A link or a
+    non-regular file counts as present: it is never read."""
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return False
+    kind = classify_stat(info, windows=sys.platform == "win32")
+    if kind is not EntryKind.REGULAR:
+        return True
+    try:
+        descriptor = os.open(path, _open_flags())
+    except OSError:
+        return True  # cannot be read: assume it matters
+    try:
+        data = os.read(descriptor, _LAYOUT_READ_BYTES + 1)
+    except OSError:
+        return True
+    finally:
+        os.close(descriptor)
+    if len(data) > _LAYOUT_READ_BYTES:
+        return True
+    return any(line.strip() and not line.lstrip().startswith(b"#") for line in data.split(b"\n"))
+
+
+def _kind_at(path: str) -> EntryKind | None:
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return None
+    return classify_stat(info, windows=sys.platform == "win32")
+
+
+def inspect_repository(root: str) -> RepositoryLayout:
+    """Examine `root`, a directory already checked by `check_scan_root`."""
+    dot_git = os.path.join(root, ".git")
+    kind = _kind_at(dot_git)
+    git_dir: str | None
+    if kind is EntryKind.DIRECTORY:
+        layout, git_dir = GitDirKind.STANDARD, dot_git
+    elif kind in {EntryKind.SYMLINK, EntryKind.REPARSE_POINT}:
+        return RepositoryLayout(GitDirKind.LINK, None, False, False)
+    elif kind is not None:
+        return RepositoryLayout(GitDirKind.LINK_FILE, None, False, False)
+    elif (
+        _kind_at(os.path.join(root, "HEAD")) is EntryKind.REGULAR
+        and _kind_at(os.path.join(root, "objects")) is EntryKind.DIRECTORY
+        and _kind_at(os.path.join(root, "refs")) is EntryKind.DIRECTORY
+    ):
+        layout, git_dir = GitDirKind.BARE, root
+    else:
+        return RepositoryLayout(GitDirKind.MISSING, None, False, False)
+    alternates = _has_entry_lines(os.path.join(git_dir, "objects", "info", "alternates"))
+    alternates = alternates or _has_entry_lines(
+        os.path.join(git_dir, "objects", "info", "http-alternates")
+    )
+    grafts = _has_entry_lines(os.path.join(git_dir, "info", "grafts"))
+    return RepositoryLayout(layout, os.path.abspath(git_dir), alternates, grafts)
+
+
+def same_directory(first: str, second: str) -> bool:
+    """True when both names resolve to one directory (case and links resolved)."""
+    return os.path.normcase(os.path.realpath(first)) == os.path.normcase(os.path.realpath(second))

@@ -40,6 +40,7 @@ class ScanSettings:
     limits: Limits = DEFAULT_LIMITS
     exclude_globs: tuple[str, ...] = ()
     default_excludes: bool = True
+    only_paths: frozenset[str] | None = None  # `scan --gitignore`: git's list of `/` paths
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +75,7 @@ def scan_tree(
             walk.DEFAULT_EXCLUDED_DIRECTORIES if settings.default_excludes else frozenset()
         ),
         exclude_globs=compile_globs(settings.exclude_globs, limits, what="exclude"),
+        only_paths=settings.only_paths,
     )
     counters = walk.WalkCounters()
     events = (
@@ -170,4 +172,6 @@ def _count_skip(stats: ScanStats, reason: walk.SkipReason) -> ScanStats:
         return replace(stats, skipped_offline=stats.skipped_offline + 1)
     if reason is walk.SkipReason.SPECIAL:
         return replace(stats, skipped_special=stats.skipped_special + 1)
+    if reason is walk.SkipReason.GITIGNORED:
+        return replace(stats, skipped_gitignored=stats.skipped_gitignored + 1)
     return replace(stats, skipped_excluded=stats.skipped_excluded + 1)

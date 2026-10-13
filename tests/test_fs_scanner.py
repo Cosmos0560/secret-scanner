@@ -175,6 +175,7 @@ _SKIP_FIELDS = {
     SkipReason.OFFLINE: "skipped_offline",
     SkipReason.SPECIAL: "skipped_special",
     SkipReason.EXCLUDED: "skipped_excluded",
+    SkipReason.GITIGNORED: "skipped_gitignored",
 }
 
 
