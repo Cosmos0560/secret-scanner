@@ -917,4 +917,36 @@ phase report written. Tagging and pushing are yours.
      in the default run. Two generated or oversized inputs (1 500 random patterns, 3 000 nesting
      levels) run reduced in the default gate and in full as `slow`. Measured numbers are in
      docs/phase-reports.md. The floor of 85 % and every threshold are unchanged.
+- v0.10 (2026-10-13): Phase 4 interpretations and additions, **awaiting acceptance** (details in
+  docs/phase-reports.md and docs/git-hardening.md):
+  1. Refusals before git reads any object, from `lstat` and bounded reads in `fs/walk.py`
+     (exit code 3): `.git` as a symbolic link or reparse point, `.git` as a file (a worktree or
+     submodule checkout: scan the main repository), `objects/info/alternates` or `http-alternates`
+     with entries (objects outside the repository would be read silently), and `info/grafts` with
+     entries (the installed git's documentation does not say that `--no-replace-objects` turns
+     grafts off). The git directory git then discovers must be the one found by `lstat`.
+  2. `rev-parse --show-object-format` is not called: the object id length (40 or 64) is taken from
+     git's own output and must be the same everywhere.
+  3. `log` also gets `--diff-filter=AMT`; D2's list is otherwise unchanged. `--no-optional-locks`
+     is passed as a global option as well as the environment variable, and
+     `GIT_PROTOCOL_FROM_USER=0` is added to the environment. `GIT_NO_LAZY_FETCH` is the
+     environment variable only (the `--no-lazy-fetch` option is git 2.44).
+  4. `scan --gitignore` discovers the work tree with no ceiling (D13 allows a PATH inside a work
+     tree); `scan-git` keeps D2's ceiling at the parent of the path. A PATH outside any work tree
+     is exit code 2 (D13), not 3.
+  5. History statistics: `files_seen` and `files_scanned` count distinct blobs, `blobs_from_cache`
+     counts (commit, path) entries of an already scanned blob, gitlinks and symlink entries are
+     counted per entry. `history_complete` is true only for a non-shallow, complete run.
+  6. A blob's matches are cached per (blob id, entropy detector enabled for the path), because the
+     entropy detector is skipped for some paths; a finding is reported once per fingerprint, at the
+     first commit of the walk (`--reverse --topo-order`).
+  7. A cap or deadline hit before anything was scanned (during discovery) is exit code 4 with an
+     error message and no report; after the walk has started it is a recorded issue and a report.
+  8. `--git PATH` is validated by `fs/safe_files.check_program` (absolute, a regular file, not in
+     the scanned tree; exit code 2). The git program is otherwise searched on PATH skipping empty
+     and relative entries and anything inside the scanned tree.
+  9. On Windows a stopped git is ended with `taskkill /PID <pid> /T /F` (by PID) in addition to
+     `Popen.kill`, because `cmd\git.exe` starts the real git as a child.
+  10. New: module `app/common.py` (the steps `scan` and `scan-git` share), `docs/git-hardening.md`
+      with drift tests, test marker `requires_git_sha256`, `tests/hostile.py`.
 

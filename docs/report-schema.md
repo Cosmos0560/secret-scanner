@@ -31,7 +31,7 @@ documents.
 | `target` | object | `kind` (`fs` or `git`) and `path` (the path as given, escaped). |
 | `complete` | boolean | `true` only when every file was read and no limit was hit. |
 | `truncated` | boolean | `true` when the report limit cut the list of findings. |
-| `history_complete` | boolean or null | Git target only; `null` for a directory scan. |
+| `history_complete` | boolean or null | Git target only; `null` for a directory scan. `true` only when the repository is not shallow and the run was complete; `false` for a shallow repository, even with `--allow-shallow`. |
 | `counts` | object | Totals, below. |
 | `stats` | object | What was seen, scanned and skipped, below. |
 | `findings` | array | Reported findings, plus suppressed ones when `--show-suppressed` is given. |
@@ -52,19 +52,19 @@ documents.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `files_seen` | integer | Regular files read, whether or not they could be scanned. |
-| `files_scanned` | integer | Files whose content was scanned. |
+| `files_seen` | integer | Regular files read, whether or not they could be scanned. For a history scan: distinct blobs examined. |
+| `files_scanned` | integer | Files whose content was scanned. For a history scan: distinct blobs scanned (the same as `blobs_scanned`). |
 | `bytes_scanned` | integer | Bytes of the scanned files. |
 | `skipped_binary` | integer | Files with a NUL byte in the first 8 000 bytes (not an issue). |
-| `skipped_symlink` | integer | Symbolic links and Windows reparse points; never followed. |
+| `skipped_symlink` | integer | Symbolic links and Windows reparse points; never followed. For a history scan: symlink entries of commits (their content is a path, not read). |
 | `skipped_offline` | integer | Cloud placeholders; reading them would download them. |
 | `skipped_special` | integer | FIFOs, sockets and devices; never opened. |
 | `skipped_excluded` | integer | Entries excluded by default excludes or configuration. |
-| `skipped_gitignored` | integer | Entries filtered by `--gitignore` (Phase 4). |
-| `skipped_submodule` | integer | Submodule entries in a history scan (Phase 4). |
-| `commits` | integer | Commits walked (git target). |
+| `skipped_gitignored` | integer | Entries `--gitignore` filtered out: files that git does not list, and directories that hold none (counted once, not entered). |
+| `skipped_submodule` | integer | Submodule (gitlink) entries of commits in a history scan; their contents are another repository. |
+| `commits` | integer | Commits walked (git target). A commit is walked against its first parent only; blobs new to the walk are scanned, so a secret introduced in a merge resolution is found. |
 | `blobs_scanned` | integer | Distinct blobs scanned (git target). |
-| `blobs_from_cache` | integer | Blobs served from the per-run cache (git target). |
+| `blobs_from_cache` | integer | Entries (a path in a commit) whose blob had been scanned already (git target). |
 
 ### `findings[]`
 

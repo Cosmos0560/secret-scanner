@@ -1,10 +1,10 @@
 """Argument parsing, exit codes, and the single place that prints (PLAN.md section 1.5).
 
-`scan` is built (Phase 3); `scan-git`, `demo` and `rules` arrive with their phases. This module
-only wires things together: it turns arguments into a request, calls the application, prints
-the rendered report on stdout and one-line notices on stderr, and maps every refusal to an exit
-code. Error text always passes through the sanitiser, including argparse's own messages, which
-would otherwise echo an argument verbatim.
+`scan` (Phase 3) and `scan-git` (Phase 4) are built; `demo` and `rules` arrive with Phase 5.
+This module only wires things together: it turns arguments into a request, calls the
+application, prints the rendered report on stdout and one-line notices on stderr, and maps every
+refusal to an exit code. Error text always passes through the sanitiser, including argparse's
+own messages, which would otherwise echo an argument verbatim.
 """
 
 from __future__ import annotations
@@ -15,7 +15,9 @@ from collections.abc import Sequence
 from typing import NoReturn
 
 from secret_scanner import __version__
+from secret_scanner.app.common import ScanOutcome
 from secret_scanner.app.scan import ScanRequest, run_scan
+from secret_scanner.app.scan_git import GitScanRequest, run_scan_git
 from secret_scanner.core.errors import MAX_ERROR_MESSAGE_CHARS, ExitCode, SecretScannerError
 from secret_scanner.core.models import Confidence, OutputFormat, Severity
 from secret_scanner.core.sanitize import sanitize
@@ -34,6 +36,44 @@ class _Parser(argparse.ArgumentParser):
         raise SystemExit(int(ExitCode.USAGE))
 
 
+def _add_report_options(parser: argparse.ArgumentParser) -> None:
+    """The output, baseline and filtering options both commands have."""
+    parser.add_argument(
+        "--format",
+        dest="output_format",
+        choices=[fmt.value for fmt in OutputFormat],
+        default=OutputFormat.TABLE.value,
+        help="report format (default: table)",
+    )
+    parser.add_argument("--output", metavar="FILE", help="write the report to FILE, not to stdout")
+    parser.add_argument(
+        "--force", action="store_true", help="replace --output / --write-baseline if it exists"
+    )
+    parser.add_argument("--config", metavar="FILE", help="a configuration file (YAML)")
+    parser.add_argument("--baseline", metavar="FILE", help="suppress the findings listed in FILE")
+    parser.add_argument(
+        "--write-baseline",
+        metavar="FILE",
+        help="write a baseline of the current findings to FILE",
+    )
+    parser.add_argument(
+        "--show-suppressed", action="store_true", help="also list findings the baseline suppresses"
+    )
+    parser.add_argument(
+        "--min-confidence",
+        choices=[c.value for c in Confidence],
+        help="lowest confidence to report (default: medium)",
+    )
+    parser.add_argument(
+        "--fail-on",
+        choices=[s.value for s in Severity],
+        help="lowest severity that fails the run (default: low)",
+    )
+    parser.add_argument(
+        "--host-label", metavar="TEXT", help="host name for machine-readable output"
+    )
+
+
 def _add_scan_parser(subcommands: argparse._SubParsersAction[_Parser]) -> None:
     scan = subcommands.add_parser(
         "scan",
@@ -46,42 +86,52 @@ def _add_scan_parser(subcommands: argparse._SubParsersAction[_Parser]) -> None:
     )
     scan.add_argument("path", metavar="PATH", help="the directory to scan")
     scan.add_argument(
-        "--format",
-        dest="output_format",
-        choices=[fmt.value for fmt in OutputFormat],
-        default=OutputFormat.TABLE.value,
-        help="report format (default: table)",
+        "--gitignore",
+        action="store_true",
+        help="scan only the files git lists (tracked, plus untracked and not ignored)",
     )
-    scan.add_argument("--output", metavar="FILE", help="write the report to FILE, not to stdout")
-    scan.add_argument(
-        "--force", action="store_true", help="replace --output / --write-baseline if it exists"
-    )
-    scan.add_argument("--config", metavar="FILE", help="a configuration file (YAML)")
-    scan.add_argument("--baseline", metavar="FILE", help="suppress the findings listed in FILE")
-    scan.add_argument(
-        "--write-baseline",
-        metavar="FILE",
-        help="write a baseline of the current findings to FILE",
-    )
-    scan.add_argument(
-        "--show-suppressed", action="store_true", help="also list findings the baseline suppresses"
-    )
-    scan.add_argument(
-        "--min-confidence",
-        choices=[c.value for c in Confidence],
-        help="lowest confidence to report (default: medium)",
-    )
-    scan.add_argument(
-        "--fail-on",
-        choices=[s.value for s in Severity],
-        help="lowest severity that fails the run (default: low)",
-    )
+    _add_git_options(scan)
     scan.add_argument(
         "--no-default-excludes",
         action="store_true",
         help="also scan .git, node_modules, .venv and the other default excluded directories",
     )
-    scan.add_argument("--host-label", metavar="TEXT", help="host name for machine-readable output")
+    _add_report_options(scan)
+
+
+def _add_git_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--allow-other-owner",
+        action="store_true",
+        help="trust a repository that belongs to another user (git's dubious ownership check)",
+    )
+    parser.add_argument(
+        "--git", metavar="PATH", help="the git program to use (an absolute path; default: PATH)"
+    )
+
+
+def _add_scan_git_parser(subcommands: argparse._SubParsersAction[_Parser]) -> None:
+    scan_git = subcommands.add_parser(
+        "scan-git",
+        help="scan the history of a git repository",
+        description=(
+            "Scan every blob added or modified in the history of a git repository and name the "
+            "commit that introduced each secret. Read-only: git runs with a fixed environment "
+            "and configuration, and no full secret is ever printed."
+        ),
+        allow_abbrev=False,
+    )
+    scan_git.add_argument("path", metavar="REPO", help="the top directory of the work tree")
+    revisions = scan_git.add_mutually_exclusive_group()
+    revisions.add_argument("--rev", metavar="REV", help="scan the history reachable from REV")
+    revisions.add_argument("--range", metavar="A..B", help="scan the commits in A..B only")
+    scan_git.add_argument(
+        "--allow-shallow",
+        action="store_true",
+        help="accept a shallow repository (the run is then not marked incomplete)",
+    )
+    _add_git_options(scan_git)
+    _add_report_options(scan_git)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -93,6 +143,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"{PROG} {__version__}")
     subcommands = parser.add_subparsers(dest="command", metavar="COMMAND", parser_class=_Parser)
     _add_scan_parser(subcommands)
+    _add_scan_git_parser(subcommands)
     return parser
 
 
@@ -118,9 +169,15 @@ def _run_scan_command(args: argparse.Namespace) -> ExitCode:
         fail_on=None if args.fail_on is None else Severity(args.fail_on),
         default_excludes=not args.no_default_excludes,
         host_label=args.host_label,
+        gitignore=args.gitignore,
+        allow_other_owner=args.allow_other_owner,
+        git=args.git,
     )
-    outcome = run_scan(request, SystemClock())
-    if request.output is None:
+    return _print_outcome(run_scan(request, SystemClock()), request.output)
+
+
+def _print_outcome(outcome: ScanOutcome, output: str | None) -> ExitCode:
+    if output is None:
         sys.stdout.write(outcome.text)
         sys.stdout.flush()
     for notice in outcome.notices:
@@ -128,10 +185,34 @@ def _run_scan_command(args: argparse.Namespace) -> ExitCode:
     return outcome.exit_code
 
 
+def _run_scan_git_command(args: argparse.Namespace) -> ExitCode:
+    request = GitScanRequest(
+        path=args.path,
+        revision=args.rev,
+        revision_range=args.range,
+        allow_shallow=args.allow_shallow,
+        allow_other_owner=args.allow_other_owner,
+        git=args.git,
+        output_format=OutputFormat(args.output_format),
+        output=args.output,
+        force=args.force,
+        config=args.config,
+        baseline=args.baseline,
+        write_baseline=args.write_baseline,
+        show_suppressed=args.show_suppressed,
+        min_confidence=None if args.min_confidence is None else Confidence(args.min_confidence),
+        fail_on=None if args.fail_on is None else Severity(args.fail_on),
+        host_label=args.host_label,
+    )
+    return _print_outcome(run_scan_git(request, SystemClock()), request.output)
+
+
 def _dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> ExitCode:
     """Run the requested command; with none given, print usage."""
     if args.command == "scan":
         return _run_scan_command(args)
+    if args.command == "scan-git":
+        return _run_scan_git_command(args)
     parser.print_usage(sys.stderr)
     return ExitCode.USAGE
 

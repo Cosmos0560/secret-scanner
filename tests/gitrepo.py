@@ -69,16 +69,23 @@ def git_environment(home: Path, *, commit_index: int = 0) -> dict[str, str]:
 
 
 def run_git(
-    cwd: Path, home: Path, *args: str, commit_index: int = 0, check: bool = True
+    cwd: Path,
+    home: Path,
+    *args: str,
+    commit_index: int = 0,
+    check: bool = True,
+    extra_env: dict[str, str] | None = None,
+    extra_config: tuple[tuple[str, str], ...] = (),
 ) -> subprocess.CompletedProcess[str]:
-    """Run one git command with the pinned configuration and the from-scratch environment."""
+    """Run one git command with the pinned configuration and the from-scratch environment.
+    `extra_env` (for example a different author name) and `extra_config` apply to this call only."""
     pinned: list[str] = []
-    for key, value in PINNED_CONFIG:
+    for key, value in (*PINNED_CONFIG, *extra_config):
         pinned += ["-c", f"{key}={value}"]
     return subprocess.run(
         [git_binary(), *pinned, *args],
         cwd=cwd,
-        env=git_environment(home, commit_index=commit_index),
+        env={**git_environment(home, commit_index=commit_index), **(extra_env or {})},
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -102,8 +109,22 @@ class GitRepo:
         run_git(path, home, "init", "-q", "-b", "main", "--template=", str(path))
         return cls(path, home)
 
-    def git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        return run_git(self.path, self.home, *args, commit_index=self.commits, check=check)
+    def git(
+        self,
+        *args: str,
+        check: bool = True,
+        extra_env: dict[str, str] | None = None,
+        extra_config: tuple[tuple[str, str], ...] = (),
+    ) -> subprocess.CompletedProcess[str]:
+        return run_git(
+            self.path,
+            self.home,
+            *args,
+            commit_index=self.commits,
+            check=check,
+            extra_env=extra_env,
+            extra_config=extra_config,
+        )
 
     def write(self, relative: str, content: bytes | str) -> Path:
         target = self.path / relative
@@ -117,7 +138,23 @@ class GitRepo:
     def add(self, *relatives: str) -> None:
         self.git("add", "--", *relatives)
 
-    def commit(self, message: str) -> str:
+    def commit(self, message: str, *, author: str | None = None, allow_empty: bool = False) -> str:
+        """Commit the staged files; `author` replaces the author name for this commit only (an
+        environment override, D17)."""
         self.commits += 1
-        self.git("commit", "-q", "--no-verify", "-m", message)
+        extra = {"GIT_AUTHOR_NAME": author} if author is not None else None
+        arguments = ["commit", "-q", "--no-verify", "-m", message]
+        if allow_empty:
+            arguments.append("--allow-empty")
+        self.git(*arguments, extra_env=extra)
+        return self.head()
+
+    def head(self) -> str:
         return self.git("rev-parse", "HEAD").stdout.strip()
+
+    def commit_files(self, message: str, files: dict[str, bytes | str], **kwargs: object) -> str:
+        """Write the files, stage exactly those paths and commit."""
+        for relative, content in files.items():
+            self.write(relative, content)
+        self.add(*files)
+        return self.commit(message, **kwargs)  # type: ignore[arg-type]

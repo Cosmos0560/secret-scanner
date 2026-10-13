@@ -58,6 +58,7 @@ markers = [
     "requires_symlinks: needs symlink creation to work on this machine",
     "requires_git: needs a git binary; a skip of this marker fails CI",
     "requires_sh: needs a POSIX sh on PATH (Git Bash on Windows); a skip of this marker fails CI",
+    "requires_git_sha256: needs a git that can create SHA-256 repositories; skipped with a reason",
     "posix_only: meaningful only on POSIX systems",
     "windows_only: meaningful only on Windows",
     "reads_repository: reads this repository on purpose; exempt from the temporary-path guard",

@@ -163,6 +163,7 @@ def test_registered_markers_match_the_documented_names() -> None:
         "requires_symlinks",
         "requires_git",
         "requires_sh",
+        "requires_git_sha256",
         "posix_only",
         "windows_only",
         "reads_repository",

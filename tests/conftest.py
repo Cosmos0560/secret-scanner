@@ -275,11 +275,44 @@ def _have_symlinks() -> bool:
     return _SYMLINKS[0]
 
 
+_SHA256: list[bool] = []
+
+
+def git_supports_sha256() -> bool:
+    """True when the installed git can create a SHA-256 repository (probed once, in a temporary
+    directory, through the same from-scratch environment the git tests use)."""
+    if not _SHA256:
+        import tempfile  # local: only the probe needs it
+
+        from tests.gitrepo import git_binary, git_environment
+
+        ok = False
+        if shutil.which("git") is not None:
+            with tempfile.TemporaryDirectory() as directory:
+                try:
+                    import subprocess
+
+                    done = subprocess.run(
+                        [git_binary(), "init", "-q", "--object-format=sha256", directory],
+                        env=git_environment(Path(directory)),
+                        capture_output=True,
+                        timeout=60,
+                        check=False,
+                    )
+                    ok = done.returncode == 0
+                except (OSError, subprocess.SubprocessError):
+                    ok = False
+        _SHA256.append(ok)
+    return _SHA256[0]
+
+
 def pytest_runtest_setup(item: pytest.Item) -> None:
     names = {marker.name for marker in item.iter_markers()}
     reason = skip_reason(names, platform=sys.platform, have_symlinks=_have_symlinks)
     if reason is not None:
         pytest.skip(reason)
+    if "requires_git_sha256" in names and not git_supports_sha256():
+        pytest.skip("requires_git_sha256: this git cannot create SHA-256 repositories")
     for marker, tool in REQUIRED_TOOLS.items():
         if marker in names and shutil.which(tool) is None:
             message = f"{marker}: no {tool} binary on PATH"
