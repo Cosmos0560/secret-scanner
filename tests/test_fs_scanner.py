@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import stat
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -12,12 +13,15 @@ from pathlib import Path
 import pytest
 
 from secret_scanner.core.detect.entropy import EntropyConfig
+from secret_scanner.core.entries import EntryKind, classify_stat
 from secret_scanner.core.errors import UsageError
 from secret_scanner.core.fakes import build_fake, fake_entropy_token, fake_private_key
 from secret_scanner.core.fingerprint import fingerprint
 from secret_scanner.core.limits import DEFAULT_LIMITS, Limits
-from secret_scanner.core.models import Confidence, IssueKind, Rule, Severity
-from secret_scanner.fs.walk import ReadFailure, read_regular_file
+from secret_scanner.core.models import Confidence, IssueKind, Rule, ScanStats, Severity
+from secret_scanner.fs import walk
+from secret_scanner.fs.walk import ReadFailure, SkipReason, read_regular_file
+from secret_scanner.services import fs_scanner
 from secret_scanner.services.fs_scanner import ScanResult, ScanSettings, scan_tree
 from secret_scanner.services.loader import load_builtin_rules
 from tests.helpers import FakeClock
@@ -164,6 +168,78 @@ def test_binary_and_default_excluded_content_is_counted_not_scanned(root: Path) 
     assert result.stats.skipped_binary == 1
     assert result.stats.skipped_excluded == 2
     assert result.stats.files_seen == 2
+
+
+_SKIP_FIELDS = {
+    SkipReason.SYMLINK: "skipped_symlink",
+    SkipReason.OFFLINE: "skipped_offline",
+    SkipReason.SPECIAL: "skipped_special",
+    SkipReason.EXCLUDED: "skipped_excluded",
+}
+
+
+@pytest.mark.parametrize("reason", list(SkipReason), ids=lambda reason: reason.value)
+def test_each_skip_reason_increments_exactly_its_own_counter(reason: SkipReason) -> None:
+    counted = fs_scanner._count_skip(ScanStats(), reason)
+    expected = dict.fromkeys(_SKIP_FIELDS.values(), 0)
+    expected[_SKIP_FIELDS[reason]] = 1
+    assert {name: getattr(counted, name) for name in expected} == expected
+    # nothing else moves, and the counter adds up across calls
+    assert replace(counted, **{_SKIP_FIELDS[reason]: 0}) == ScanStats()
+    assert getattr(fs_scanner._count_skip(counted, reason), _SKIP_FIELDS[reason]) == 2
+
+
+def test_the_skip_reasons_are_all_counted_by_the_table() -> None:
+    assert set(_SKIP_FIELDS) == set(SkipReason)
+
+
+@pytest.mark.requires_symlinks
+def test_links_are_counted_and_never_followed(
+    root: Path, assert_not_leaked: Callable[..., None]
+) -> None:
+    token = fake("npm-token")
+    put(root, "real/secret.txt", token)
+    (root / "file-link").symlink_to(root / "real" / "secret.txt")
+    (root / "dir-link").symlink_to(root / "real", target_is_directory=True)
+    result = scan(root)
+    assert [f.location.path_key for f in result.findings] == ["real/secret.txt"]
+    assert result.stats.skipped_symlink == 2
+    assert result.stats.files_scanned == 1
+    assert result.complete  # a skipped link is counted, not an issue
+    assert_not_leaked(repr(result), token, allowed_shown=len("npm_"))
+
+
+def test_offline_and_special_entries_are_counted_and_never_opened(
+    root: Path, monkeypatch: pytest.MonkeyPatch, assert_not_leaked: Callable[..., None]
+) -> None:
+    token = fake("npm-token")
+    put(root, "offline.txt", "o" * 11)
+    put(root, "special.txt", "s" * 7)
+    put(root, "plain.txt", token)
+    real = classify_stat
+
+    def classify(info: os.stat_result, *, windows: bool) -> EntryKind:
+        # Files are told apart by size; the root directory and `plain.txt` keep their real kind.
+        if stat.S_ISREG(info.st_mode) and info.st_size == 11:
+            return EntryKind.OFFLINE
+        if stat.S_ISREG(info.st_mode) and info.st_size == 7:
+            return EntryKind.SPECIAL
+        return real(info, windows=windows)
+
+    opened: list[str] = []
+
+    def reader(path: str, info: os.stat_result, maximum: int) -> bytes | ReadFailure:
+        opened.append(Path(path).name)
+        return read_regular_file(path, info, maximum)
+
+    monkeypatch.setattr(walk, "classify_stat", classify)
+    result = scan(root, reader=reader)
+    assert opened == ["plain.txt"]
+    assert (result.stats.skipped_offline, result.stats.skipped_special) == (1, 1)
+    assert result.stats.files_scanned == 1
+    assert [f.location.path_key for f in result.findings] == ["plain.txt"]
+    assert result.complete
+    assert_not_leaked(repr(result), token, allowed_shown=len("npm_"))
 
 
 def test_default_excludes_can_be_turned_off_and_config_excludes_apply(root: Path) -> None:
