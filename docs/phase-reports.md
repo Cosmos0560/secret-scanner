@@ -5,8 +5,10 @@ CLAUDE.md section 2, step 5. The last entry is the one a new session reads first
 
 ## In progress
 
-Nothing. Phase 3 is complete (entry at the end of this file). Phase 4 (git history scan) is next;
-its decisions D1, D2, D13 (`--gitignore`) and D17 are approved in PLAN.md section 0.
+Nothing. Phase 4 (git history scan) is done and reported below. The next phase is Phase 5 (JSONL,
+SARIF, demo, `rules`, cross-format leak proof); it has not been started. Open items for the owner
+are under "Known gaps" of the Phase 4 report: PLAN.md v0.11 (awaiting acceptance), the default
+gate time, and the first push of the commits after `38f6979`, which the owner makes.
 
 ## Phase 1 - Foundation, gate, hook, CI, pure core (2026-10-12)
 
@@ -307,3 +309,100 @@ Deviations from PLAN.md: --write-baseline in Phase 3 (accepted, v0.7); awaiting 
      YAML nesting: 600 levels in the default gate, 3 000 as `slow`.
    The slow tests added by this are run in the full gate (see the end of this entry).
 
+### Slices and commits
+
+| Commit | What |
+|---|---|
+| `f2e26fd` | step 0a: paths shown relative with `/` and escaped per component (PLAN.md v0.9 item 1) |
+| `ec93f7a` | step 0b: environment isolation once per session, heaviest tests split into default and slow cases (v0.9 item 2) |
+| `4ee2dc1` | strict git output parsers (`core/gitparse.py`), the hardened runner (`gitio/runner.py`), repository inspection |
+| `ce8cf35` | `scan-git` and `scan --gitignore`, hostile-repository, history and bounds tests, `docs/git-hardening.md` with drift tests |
+| `38f6979` | runner pipe, writer and cleanup edge tests |
+| `89513f3` | fix for the Windows binary-planting finding F-1 (below), after CI run 5 went red on `38f6979` |
+
+### Resumption after a four-week pause (2026-11-08)
+
+Nothing from the earlier session was assumed. State found: `main` at `38f6979`, the only local
+change the "In progress" edit of this file, git **2.54.0.windows.1**, Python 3.13.14, the packages
+in `.venv` matching `pyproject.toml` (ruff 0.17.0, mypy 2.4.0, pytest 9.1.1, pytest-cov 7.1.0,
+PyYAML 6.0.3). The default gate passed on the untouched tree (2143 passed, 17 skipped, 80
+deselected, 99.60%; 65.2 s in total on a cold start). Owner answers recorded: the two stopped bash
+processes were the earlier session's own gate and WSL runs, interrupted when it ended; PLAN.md
+v0.10 is accepted (the refusals of worktree and submodule `.git` files, alternates and grafts),
+and is now listed in the README under Limitations as a known, deliberate refusal.
+
+### Finding F-1: Windows binary planting (caught by CI run 5)
+
+CI run 5 on `38f6979`: every Windows job failed in
+`tests/test_git_hostile.py::test_a_planted_git_program_is_never_chosen` (WinError 216 while
+starting a planted `git.exe`), every Linux job passed. Full write-up, controls and test names:
+`docs/threat-model.md`, finding F-1.
+
+- Reproduced locally by removing `NoDefaultCurrentDirectoryInExePath` from the test's environment:
+  this machine sets it to `1`, the CI runners do not. That is why the local gate was green.
+- Root cause, verified and not as first suspected: the product's search already skipped empty and
+  relative `PATH` entries. The planted program was chosen because the test helper
+  `tests/gitrepo.py::git_binary()` called `shutil.which("git")` after the test had changed into the
+  directory holding the plant; on Windows `which` searches the current directory first, so the
+  helper returned the plant as "the real git", and the test passed that directory to `open_runner`
+  as an absolute `PATH` entry. The product trusted it. Real hardening gap: an absolute entry equal
+  to the current directory, or inside the system temporary directory, was trusted.
+- Fix: absolute, normalised, fully qualified entries only; the scanned tree, the system temporary
+  tree and the current directory itself are refused; Windows accepts only `git.exe` (also for
+  `--git`); `Popen(executable=...)`; the test helper uses the product's search. The original test
+  is unchanged. 47 collected tests in the new `tests/test_git_program_resolution.py` (one is
+  `slow`: it plants a real, harmless executable, compiled with the C# compiler that ships with
+  Windows, proves with a control run that it writes its marker, and shows the marker is absent
+  after the search) and further tests in `tests/test_git_fs.py`. Each rule was mutation-checked:
+  switching it off fails tests.
+
+### Measured (this machine: Windows 11, Python 3.13.14, git 2.54.0.windows.1, 2026-11-08)
+
+- Full gate, committed code `89513f3`: 2292 passed, 21 skipped (posix-only), 177.0 s pytest,
+  184.1 s in total, **99.72%** branch coverage (the lines it misses are POSIX branches in
+  `fs/safe_files.py` and platform branches of the runner).
+- Default gate on `89513f3`: 2214 passed, 18 skipped, 81 deselected, 99.61%, **53.6 s in total**
+  (pytest 46.9 s). On the untouched resumption tree it was 65.2 s (cold start) with 2143 tests.
+- WSL Ubuntu, git 2.53.0, Python 3.14.4 (outside the CI matrix, as CLAUDE.md allows), full gate on
+  the committed `89513f3`: 2288 passed, 25 skipped (windows-only), 17.6 s pytest, 24.8 s in total,
+  **99.81%**. This is the first Linux run of the POSIX-only tests of Phase 4 (hostile names with
+  control characters, exec-bit tests, `find_program` exec bit); all passed.
+- The default gate is above the roughly 40 s of PLAN.md v0.9 (it was 33.1 s with 1819 tests; there
+  are now 2214) and inside the 60 s target of CLAUDE.md. The "In progress" note proposed moving
+  the real-git tests of `test_git_hostile.py` to `slow` in that case. Not done: they are about 7 s
+  of the 35 s of test time and are the proof that every execution vector stays closed; moving them
+  would save about 5 s and weaken the gate that runs before every commit. The owner can overrule.
+
+`pytest -q` summary lines: Windows full `2292 passed, 21 skipped in 177.02s (0:02:57)`; Windows
+default `2214 passed, 18 skipped, 81 deselected in 46.07s`; WSL full
+`2288 passed, 25 skipped in 16.82s`.
+
+`git log --oneline -15` before this report was committed:
+
+```
+89513f3 fix: never run a git program found in the current directory, a relative PATH entry or a temp tree (Windows binary planting, CI run 5)
+38f6979 test: cover the runner's pipe, writer and cleanup edges
+ce8cf35 feat: add scan-git and scan --gitignore with hostile-repository, history and bounds tests
+4ee2dc1 feat: add the strict git output parsers, the hardened git runner and repository inspection
+ec93f7a perf: apply environment isolation once per session and split the heaviest tests into default and slow cases (PLAN.md v0.9)
+f2e26fd feat: show paths with forward slashes and per-component escaping in human output (PLAN.md v0.9)
+eb63d7e docs: add the Phase 3 report and record interpretations awaiting acceptance (PLAN.md v0.8)
+5c50f1b perf: parse the built-in rules once per process; keep the default gate near its target
+2161090 docs: add the secret-report/1 schema, exit codes and table layout with drift tests
+b9956ba test: prove no output path of scan carries a planted secret; stop echoing glob patterns
+752742f feat: add the scan command with table and JSON output, baseline options and exit codes
+cac5586 fix: never echo a key name from a configuration, rules or baseline file in an error
+ad66416 feat: add the scan use case with config merge, baseline round trip and safe outputs
+0570021 feat: add the table and JSON renderers, display-safety checks and baseline reason carry-over
+9e51e0d test: cover the directory scanner's skip counters for links, offline and special entries
+```
+
+`git status --short` before this report was committed: only `docs/phase-reports.md` modified.
+
+```
+Built: scan-git and scan --gitignore: strict git parsers (core/gitparse.py), the only git runner (gitio/runner.py: absolute binary, from-scratch environment, pinned config, command allowlist, bounded output, timeouts), repository inspection (refuses .git files and links, alternates, grafts), history walk with blob cache and first-commit attribution, shallow and partial-clone handling, docs/git-hardening.md with drift tests, docs/threat-model.md (finding F-1), CHANGELOG.md; git resolved only from fully qualified PATH entries outside the scanned tree, the temporary tree and the current directory, git.exe only on Windows
+Tests added: 479 (suite 2313 collected, 81 slow): git parsers 144, runner 67 and 20 edge, scanner service 26, repository inspection and program search 59, scan-git and --gitignore end to end 48 and 19, hostile repository with a marker for every execution vector 6, program resolution and binary planting 47, doc drift 10, self-history scan 1, plus the path display and gate-time work of the two step-0 slices
+Real coverage: 99.72% (branch, full gate, Windows, commit 89513f3); 99.81% in the WSL Linux full gate (git 2.53.0); floor 85
+Known gaps: PLAN.md v0.11 awaits acceptance; default gate 53.6 s against the roughly 40 s of v0.9 (inside the 60 s of CLAUDE.md); the fix 89513f3 has not run on CI yet (the owner pushes), nor Python 3.11 and 3.12 (local 3.13, WSL 3.14); a time-of-check to time-of-use gap between finding git and starting it; the Windows planted-executable test needs csc.exe from Windows and fails, not skips, without it; not read in v1: commit messages, tag messages, reflog, unreachable objects, submodule contents, LFS objects; refused with exit code 3: worktree and submodule .git files, alternates, grafts
+Deviations from PLAN.md: v0.10 (accepted by the owner 2026-11-08); v0.11 awaiting acceptance (D2 Binary made precise: temp tree and current directory refused, git.exe only, --git must be named git.exe on Windows, executable= passed to Popen); docs/threat-model.md and CHANGELOG.md started in Phase 4 instead of Phase 6; default gate time above the v0.9 target
+```
