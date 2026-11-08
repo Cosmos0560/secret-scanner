@@ -10,11 +10,13 @@ other than the repository's own, and no identity is ever written there.
 
 from __future__ import annotations
 
+import functools
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from secret_scanner.fs import safe_files
 
 FIRST_COMMIT_EPOCH = 1_767_225_600  # 2026-01-01T00:00:00Z
 
@@ -29,9 +31,18 @@ PINNED_CONFIG: tuple[tuple[str, str], ...] = (
 )
 
 
+@functools.cache
 def git_binary() -> str:
-    """Absolute path of the git binary, or raise when there is none."""
-    found = shutil.which("git")
+    """Absolute path of the git binary, or raise when there is none.
+
+    Not `shutil.which`: on Windows that looks in the current directory first (unless the machine
+    sets NoDefaultCurrentDirectoryInExePath), so a test that changes into a directory holding a
+    planted `git.exe` would be handed the plant as "the real git". The product's own search
+    ignores the current directory and relative entries, and the answer is kept, so a later change
+    of directory or PATH cannot alter it."""
+    found = safe_files.find_program(
+        "git", os.environ.get("PATH", ""), windows=sys.platform == "win32"
+    )
     if found is None:
         raise RuntimeError("git is not available")
     return str(Path(found).resolve())

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import stat
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -139,6 +140,123 @@ def test_a_user_given_program_must_be_executable_on_posix(tmp_path: Path) -> Non
     plain = make_program(tmp_path / "x", "git", executable=False)
     with pytest.raises(ScanIOError, match="not executable"):
         safe_files.check_program(str(plain), windows=False)
+
+
+def test_a_user_given_program_is_returned_normalised(tmp_path: Path) -> None:
+    good = make_program(tmp_path / "x", "git")
+    messy = str(tmp_path / "x" / ".." / "x" / "git")
+    assert safe_files.check_program(messy, windows=False) == str(good)
+
+
+@pytest.mark.parametrize(
+    "name", ["git.cmd", "git.bat", "git.com", "git", "git.exe.bat", "xgit.exe"]
+)
+def test_on_windows_a_user_given_program_must_be_called_git_exe(tmp_path: Path, name: str) -> None:
+    program = make_program(tmp_path / "x", name)
+    with pytest.raises(ScanIOError, match=r"git\.exe"):
+        safe_files.check_program(str(program), windows=True)
+
+
+def test_on_windows_the_exe_name_is_matched_without_regard_to_case(tmp_path: Path) -> None:
+    program = make_program(tmp_path / "x", "GIT.EXE")
+    assert safe_files.check_program(str(program), windows=True) == str(program)
+
+
+def test_a_user_given_program_is_trusted_in_the_current_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Typed in full, it is the user's choice; only the scanned tree is off limits."""
+    program = make_program(tmp_path / "cwd", "git")
+    monkeypatch.chdir(program.parent)
+    assert safe_files.check_program(str(program), windows=False) == str(program)
+
+
+# -- what a program search must not trust ----------------------------------------------------------
+
+
+def test_is_absolute_needs_a_fully_qualified_path(tmp_path: Path) -> None:
+    assert safe_files.is_absolute(str(tmp_path))
+    for relative in ("", ".", "..", "git", "./git", "bin/git"):
+        assert not safe_files.is_absolute(relative)
+
+
+@pytest.mark.windows_only
+@pytest.mark.parametrize("path", ["\\bin", "\\", "C:bin", "C:", "bin\\git.exe", ".\\bin"])
+def test_a_windows_path_that_depends_on_the_current_drive_is_not_absolute(path: str) -> None:
+    assert not safe_files.is_absolute(path)
+
+
+@pytest.mark.windows_only
+@pytest.mark.parametrize("path", ["C:\\bin", "c:/bin", "\\\\server\\share\\bin"])
+def test_a_windows_drive_or_share_path_is_absolute(path: str) -> None:
+    assert safe_files.is_absolute(path)
+
+
+def test_the_current_directory_as_an_absolute_entry_is_skipped_but_not_what_is_below(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    here = make_program(tmp_path / "cwd", "git")
+    below = make_program(tmp_path / "cwd" / "tools", "git")
+    good = make_program(tmp_path / "system", "git")
+    monkeypatch.chdir(here.parent)
+    refused = [str(here.parent)]
+    assert safe_files.find_program(
+        "git", search_path(here.parent, good.parent), windows=False, avoid_directories=refused
+    ) == str(good)
+    assert (
+        safe_files.find_program(
+            "git", search_path(here.parent), windows=False, avoid_directories=refused
+        )
+        is None
+    )
+    assert safe_files.find_program(
+        "git", search_path(below.parent), windows=False, avoid_directories=refused
+    ) == str(below)
+
+
+def test_a_directory_spelled_differently_is_still_the_refused_one(tmp_path: Path) -> None:
+    here = make_program(tmp_path / "cwd", "git")
+    spelled = str(tmp_path / "cwd" / ".." / "cwd") + os.sep
+    assert (
+        safe_files.find_program("git", spelled, windows=False, avoid_directories=[str(here.parent)])
+        is None
+    )
+
+
+def test_a_found_program_is_normalised(tmp_path: Path) -> None:
+    good = make_program(tmp_path / "bin", "git")
+    entry = str(tmp_path / "bin" / ".." / "bin") + os.sep
+    assert safe_files.find_program("git", entry, windows=False) == str(good)
+
+
+def test_the_search_hazards_are_the_temporary_tree_and_the_current_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "cwd").mkdir()
+    monkeypatch.chdir(tmp_path / "cwd")
+    trees, directories = safe_files.search_hazards()
+    assert [os.path.normcase(os.path.realpath(t)) for t in trees] == [
+        os.path.normcase(os.path.realpath(tempfile.gettempdir()))
+    ]
+    assert [os.path.normcase(os.path.realpath(d)) for d in directories] == [
+        os.path.normcase(os.path.realpath(tmp_path / "cwd"))
+    ]
+
+
+def test_a_deleted_current_directory_leaves_no_directory_to_refuse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def gone() -> str:
+        raise FileNotFoundError
+
+    monkeypatch.setattr(os, "getcwd", gone)
+    assert safe_files.search_hazards()[1] == []
+
+
+def test_windows_never_takes_a_script_type_for_the_program(tmp_path: Path) -> None:
+    for name in ("git.cmd", "git.bat", "git.com", "git.ps1", "git.vbs", "git.js", "git.py", "git"):
+        make_program(tmp_path / "bin", name)
+    assert safe_files.find_program("git", str(tmp_path / "bin"), windows=True) is None
 
 
 # -- the layout of a repository directory --------------------------------------------------------

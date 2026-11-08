@@ -917,8 +917,9 @@ phase report written. Tagging and pushing are yours.
      in the default run. Two generated or oversized inputs (1 500 random patterns, 3 000 nesting
      levels) run reduced in the default gate and in full as `slow`. Measured numbers are in
      docs/phase-reports.md. The floor of 85 % and every threshold are unchanged.
-- v0.10 (2026-10-13): Phase 4 interpretations and additions, **awaiting acceptance** (details in
-  docs/phase-reports.md and docs/git-hardening.md):
+- v0.10 (2026-10-13): Phase 4 interpretations and additions, **accepted by the owner on
+  2026-11-08**; item 1 (the refusals) is listed as a known, deliberate refusal under the README
+  Limitations (details in docs/phase-reports.md and docs/git-hardening.md):
   1. Refusals before git reads any object, from `lstat` and bounded reads in `fs/walk.py`
      (exit code 3): `.git` as a symbolic link or reparse point, `.git` as a file (a worktree or
      submodule checkout: scan the main repository), `objects/info/alternates` or `http-alternates`
@@ -949,4 +950,13 @@ phase report written. Tagging and pushing are yours.
      `Popen.kill`, because `cmd\git.exe` starts the real git as a child.
   10. New: module `app/common.py` (the steps `scan` and `scan-git` share), `docs/git-hardening.md`
       with drift tests, test marker `requires_git_sha256`, `tests/hostile.py`.
-
+- v0.11 (2026-11-08): D2 "Binary" made precise after CI run 5 found a real planting path
+  (docs/threat-model.md, finding F-1), **awaiting acceptance**. D2's text is unchanged; these are
+  the rules the code now enforces beyond it: only fully qualified `PATH` entries (on Windows also
+  a drive or share, not `\dir` or `C:dir`); never searched even when absolute: the scanned tree,
+  the system temporary directory tree, and the current directory itself (not below it, so a
+  `.venv\Scripts` entry or a start from a drive root keeps working); on Windows only `git.exe`
+  (v0.10 item 8 said "regular file" only); `--git PATH` on Windows must be called `git.exe`; the
+  resolved path is normalised and passed to `Popen` as `executable=` as well as `argv[0]`; the
+  test helper `git_binary()` no longer uses `shutil.which`. New files: `docs/threat-model.md`
+  (started here, Phase 6 completes it), `CHANGELOG.md`, `tests/test_git_program_resolution.py`.

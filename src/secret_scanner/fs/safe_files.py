@@ -21,6 +21,7 @@ import errno
 import os
 import stat
 import sys
+import tempfile
 from collections.abc import Sequence
 
 from secret_scanner.core.entries import EntryKind, classify_stat
@@ -201,24 +202,54 @@ def is_same_path(first: str, second: str) -> bool:
     return os.path.normcase(os.path.realpath(first)) == os.path.normcase(os.path.realpath(second))
 
 
-def find_program(
-    name: str, search_path: str, *, windows: bool, avoid: Sequence[str] = ()
-) -> str | None:
-    """The absolute path of the first regular file called `name` (`name.exe` on Windows) in the
-    entries of `search_path`, or None.
+def is_absolute(path: str) -> bool:
+    """True for a fully qualified path. On Windows that needs a drive or a UNC share: `\\dir` and
+    `C:dir` still depend on the current directory or drive (Python before 3.13 calls the first
+    one absolute), and a program found through them could be a planted one."""
+    return os.path.isabs(path) and (sys.platform != "win32" or bool(os.path.splitdrive(path)[0]))
 
-    Only absolute entries are considered: an empty or relative entry means the current directory,
-    where a planted `git.exe` would otherwise be found first (CreateProcess searches it too), and
-    an entry inside any directory of `avoid` (the scanned tree) is never trusted either. A link is
-    followed, because system installations use them, but the target must be a regular file.
+
+def search_hazards() -> tuple[list[str], list[str]]:
+    """Places a program search must not trust: (trees, directories). The tree is the system
+    temporary directory with everything below it, where another local user or a build step can
+    plant files. The directory is the current one, but only that directory itself and not what is
+    below it: a program installed next to the working directory is no hazard, whereas the
+    working directory is exactly where Windows would look first. Run from a drive root, trees
+    below the current directory would otherwise cover the whole system."""
+    trees = [tempfile.gettempdir()]
+    directories: list[str] = []
+    with contextlib.suppress(OSError):  # a deleted current directory cannot hold a planted file
+        directories.append(os.getcwd())
+    return trees, directories
+
+
+def find_program(
+    name: str,
+    search_path: str,
+    *,
+    windows: bool,
+    avoid: Sequence[str] = (),
+    avoid_directories: Sequence[str] = (),
+) -> str | None:
+    """The absolute, normalised path of the first regular file called `name` (`name.exe` on
+    Windows, never a script type) in the entries of `search_path`, or None.
+
+    Only fully qualified entries are considered: an empty or relative entry means the current
+    directory, where a planted `git.exe` would otherwise be found first (CreateProcess searches it
+    too). An entry inside any tree of `avoid` (the scanned tree) or equal to any directory of
+    `avoid_directories` (the current directory) is never trusted either. A link is followed,
+    because system installations use them, but the target must be a regular file.
     """
     filename = name + ".exe" if windows else name
+    refused = {os.path.normcase(os.path.realpath(directory)) for directory in avoid_directories}
     for entry in search_path.split(os.pathsep):
-        if not entry or not os.path.isabs(entry):
+        if not entry or not is_absolute(entry):
+            continue
+        if os.path.normcase(os.path.realpath(entry)) in refused:
             continue
         if any(_resolved_inside(root, entry) for root in avoid):
             continue
-        candidate = os.path.join(entry, filename)
+        candidate = os.path.normpath(os.path.join(entry, filename))
         try:
             info = os.stat(candidate)
         except OSError:
@@ -227,16 +258,21 @@ def find_program(
             continue
         if not windows and not os.access(candidate, os.X_OK):
             continue
-        return os.path.abspath(candidate)
+        return candidate
     return None
 
 
 def check_program(path: str, *, windows: bool, avoid: Sequence[str] = ()) -> str:
-    """Validate a program path given by the user (`--git PATH`): absolute, an existing regular
-    file, not inside a directory of `avoid`. Returns it unchanged; raises `ScanIOError`."""
+    """Validate a program path given by the user (`--git PATH`): fully qualified, an existing
+    regular file, on Windows named `git.exe`, not inside a directory of `avoid`. Returns the
+    normalised path; raises `ScanIOError`. A path the user typed is trusted wherever it is (the
+    current directory included), except inside the scanned tree."""
     shown = _shown(path)
-    if not os.path.isabs(path):
+    if not is_absolute(path):
         raise ScanIOError(f"program {shown}: must be an absolute path")
+    path = os.path.normpath(path)
+    if windows and os.path.basename(path).lower() != "git.exe":
+        raise ScanIOError(f"program {shown}: must be named git.exe")
     if any(_resolved_inside(root, path) for root in avoid):
         raise ScanIOError(f"program {shown}: must not be inside the scanned tree")
     try:

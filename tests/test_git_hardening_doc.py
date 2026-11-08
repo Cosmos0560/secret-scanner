@@ -89,3 +89,23 @@ def test_the_page_says_blobs_are_never_converted(name: str) -> None:
     assert name in section("The command set")
     for command in (GitCommand.CAT_FILE_CHECK, GitCommand.CAT_FILE_BATCH):
         assert name not in runner_module._FIXED_ARGUMENTS[command]
+
+
+def test_every_test_named_in_the_threat_model_exists() -> None:
+    """The threat model's controls are claims; each test it names must be a real test function
+    (a rename or removal fails here instead of leaving a claim without evidence)."""
+    import re
+
+    model = (PROJECT_ROOT / "docs" / "threat-model.md").read_text(encoding="utf-8")
+    sources = {
+        path.name: path.read_text(encoding="utf-8")
+        for path in (PROJECT_ROOT / "tests").glob("test_*.py")
+    }
+    names = set(re.findall(r"`((?:tests/[a-z_]+\.py::)?test_[a-z0-9_]+)`", model))
+    assert names, "the threat model names no tests"
+    for name in names:
+        file, _, function = name.rpartition("::")
+        if file:
+            assert f"def {function}(" in sources[os.path.basename(file)], name
+        else:
+            assert any(f"def {function}(" in text for text in sources.values()), name

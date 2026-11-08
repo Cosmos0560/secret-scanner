@@ -183,8 +183,11 @@ def spawn_process(
     flags = 0
     if sys.platform == "win32":
         flags = subprocess.CREATE_NO_WINDOW
+    # `executable` names the program outright, so Windows never has to parse it out of the command
+    # line and search for it (the caller passes an absolute path; GitRunner refuses anything else).
     return subprocess.Popen(
         list(argv),
+        executable=argv[0],
         env=dict(environment),
         cwd=cwd,
         stdin=subprocess.PIPE,

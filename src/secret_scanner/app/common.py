@@ -317,15 +317,21 @@ def open_runner(
     spawn: Spawn | None = None,
     environment: Mapping[str, str] | None = None,
 ) -> GitRunner:
-    """Find git (never in the current directory, a relative PATH entry or the scanned tree), start
-    a runner on it and check its version (D2). Raises `GitError` (exit code 3)."""
+    """Find git (never in the current directory, a relative PATH entry, the temporary directory
+    or the scanned tree; on Windows only `git.exe`), start a runner on its absolute path and check
+    its version (D2). Raises `GitError` (exit code 3)."""
     env = os.environ if environment is None else environment
     windows = sys.platform == "win32"
     if git is not None:
         binary = safe_files.check_program(git, windows=windows, avoid=[root])
     else:
+        trees, directories = safe_files.search_hazards()
         found = safe_files.find_program(
-            "git", _environment_value(env, "PATH"), windows=windows, avoid=[root]
+            "git",
+            _environment_value(env, "PATH"),
+            windows=windows,
+            avoid=[root, *trees],
+            avoid_directories=directories,
         )
         if found is None:
             raise GitError("git was not found on PATH (or --git PATH was not given)")

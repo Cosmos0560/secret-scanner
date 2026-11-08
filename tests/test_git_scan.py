@@ -12,7 +12,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -28,7 +27,7 @@ from secret_scanner.core.models import IssueKind, Target
 from secret_scanner.services import git_scanner
 from secret_scanner.services.loader import dump_yaml, load_builtin_rules
 from tests.conftest import leak_check
-from tests.gitrepo import GitRepo, run_git
+from tests.gitrepo import GitRepo, git_binary, run_git
 from tests.helpers import FakeClock
 
 pytestmark = [pytest.mark.requires_git, pytest.mark.slow]
@@ -390,8 +389,7 @@ def test_a_missing_git_is_exit_code_three(
 
 def test_a_git_given_with_dash_dash_git_is_used_and_validated(repo: GitRepo, cli: Cli) -> None:
     repo.commit_files("a", {"a.txt": "a" + LF})
-    real = shutil.which("git")
-    assert real is not None
+    real = git_binary()
     assert cli("scan-git", str(repo.path), "--git", real)[0] == ExitCode.OK
     code, _, err = cli("scan-git", str(repo.path), "--git", "git")
     assert code == ExitCode.USAGE

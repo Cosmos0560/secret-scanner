@@ -23,6 +23,23 @@ else on this page was checked against the documentation installed with git
 **2.54.0.windows.1** (`git-doc`, offline) and the commands were run against it and against
 Linux git **2.53.0** (WSL Ubuntu). `docs/phase-reports.md` records the versions of each run.
 
+## Which git program is run
+
+git is resolved once, to an absolute and normalised path, and that path is what is started
+(`fs/safe_files.find_program`, `check_program`, `search_hazards`; PLAN.md D2 "Binary"). The
+reasons are in `docs/threat-model.md`, finding F-1 (a planted `git.exe`, caught by CI).
+
+- Only fully qualified `PATH` entries are searched. Empty, `.` and relative entries are ignored,
+  and so are Windows entries that depend on the current drive (`\dir`, `C:dir`).
+- Never searched, even by absolute name: the scanned tree, the system temporary directory tree,
+  and the current directory itself (not what lies below it).
+- Windows: only `git.exe`. `git.cmd`, `git.bat`, `git.com` and other script types are never
+  taken, and `shutil.which` or a bare program name is never used.
+- `--git PATH`: fully qualified, an existing regular file, named `git.exe` on Windows, executable
+  on POSIX, outside the scanned tree (exit code 2 otherwise). A path typed in full is trusted
+  anywhere else.
+- Not found: exit code 3.
+
 ## The environment
 
 The environment of every git process is built from scratch (`environment_for`); nothing is
