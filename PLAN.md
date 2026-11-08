@@ -951,7 +951,7 @@ phase report written. Tagging and pushing are yours.
   10. New: module `app/common.py` (the steps `scan` and `scan-git` share), `docs/git-hardening.md`
       with drift tests, test marker `requires_git_sha256`, `tests/hostile.py`.
 - v0.11 (2026-11-08): D2 "Binary" made precise after CI run 5 found a real planting path
-  (docs/threat-model.md, finding F-1), **awaiting acceptance**. D2's text is unchanged; these are
+  (docs/threat-model.md, finding F-1), **accepted by the owner on 2026-11-08**. D2's text is unchanged; these are
   the rules the code now enforces beyond it: only fully qualified `PATH` entries (on Windows also
   a drive or share, not `\dir` or `C:dir`); never searched even when absolute: the scanned tree,
   the system temporary directory tree, and the current directory itself (not below it, so a
