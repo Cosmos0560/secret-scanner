@@ -1,6 +1,6 @@
 """Argument parsing, exit codes, and the single place that prints (PLAN.md section 1.5).
 
-`scan` (Phase 3) and `scan-git` (Phase 4) are built; `demo` and `rules` arrive with Phase 5.
+`scan` (Phase 3), `scan-git` (Phase 4), `rules` and `demo` (Phase 5) are built.
 This module only wires things together: it turns arguments into a request, calls the
 application, prints the rendered report on stdout and one-line notices on stderr, and maps every
 refusal to an exit code. Error text always passes through the sanitiser, including argparse's
@@ -16,6 +16,7 @@ from typing import NoReturn
 
 from secret_scanner import __version__
 from secret_scanner.app.common import ScanOutcome
+from secret_scanner.app.rules import run_rules
 from secret_scanner.app.scan import ScanRequest, run_scan
 from secret_scanner.app.scan_git import GitScanRequest, run_scan_git
 from secret_scanner.core.errors import MAX_ERROR_MESSAGE_CHARS, ExitCode, SecretScannerError
@@ -134,6 +135,25 @@ def _add_scan_git_parser(subcommands: argparse._SubParsersAction[_Parser]) -> No
     _add_report_options(scan_git)
 
 
+def _add_rules_parser(subcommands: argparse._SubParsersAction[_Parser]) -> None:
+    rules = subcommands.add_parser(
+        "rules",
+        help="list the built-in rules",
+        description=(
+            "List every built-in rule and detector: id, severity, confidence, description and "
+            "pre-filter keywords. No example secret is printed."
+        ),
+        allow_abbrev=False,
+    )
+    rules.add_argument(
+        "--format",
+        dest="output_format",
+        choices=[OutputFormat.TABLE.value, OutputFormat.JSON.value],
+        default=OutputFormat.TABLE.value,
+        help="listing format (default: table)",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = _Parser(
         prog=PROG,
@@ -144,6 +164,7 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands = parser.add_subparsers(dest="command", metavar="COMMAND", parser_class=_Parser)
     _add_scan_parser(subcommands)
     _add_scan_git_parser(subcommands)
+    _add_rules_parser(subcommands)
     return parser
 
 
@@ -207,12 +228,20 @@ def _run_scan_git_command(args: argparse.Namespace) -> ExitCode:
     return _print_outcome(run_scan_git(request, SystemClock()), request.output)
 
 
+def _run_rules_command(args: argparse.Namespace) -> ExitCode:
+    sys.stdout.write(run_rules(OutputFormat(args.output_format)))
+    sys.stdout.flush()
+    return ExitCode.OK
+
+
 def _dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> ExitCode:
     """Run the requested command; with none given, print usage."""
     if args.command == "scan":
         return _run_scan_command(args)
     if args.command == "scan-git":
         return _run_scan_git_command(args)
+    if args.command == "rules":
+        return _run_rules_command(args)
     parser.print_usage(sys.stderr)
     return ExitCode.USAGE
 

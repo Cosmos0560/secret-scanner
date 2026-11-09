@@ -147,7 +147,7 @@ def clip_display(text: str, max_chars: int) -> tuple[str, bool]:
     if len(text) <= max_chars:
         return text, False
     index = 0
-    while index < len(text):
+    while True:  # ends at the latest when the bound is passed: len(text) > max_chars here
         step = 1
         if text[index] == "\\" and index + 1 < len(text):
             step = _ESCAPE_LENGTHS.get(text[index + 1], 2)

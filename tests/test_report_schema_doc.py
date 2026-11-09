@@ -159,3 +159,27 @@ def test_the_table_example_has_the_documented_columns_and_summary() -> None:
 
 def test_the_document_is_plain_ascii() -> None:
     assert DOC.isascii()
+
+
+# -- the rules listing (secret-rules/1) ---------------------------------------------------------
+
+
+def test_the_rules_listing_fields_are_documented_in_order() -> None:
+    from secret_scanner.render.rules_out import RULE_FIELDS
+    from secret_scanner.render.rules_out import SCHEMA as RULES_SCHEMA
+
+    heading = "## The rules listing `secret-rules/1`"
+    assert f"`{RULES_SCHEMA}`" in section(heading)
+    assert table_fields(heading) == ["schema", "tool", "rules_sha256", "rules"]
+    assert table_fields("### `rules[]`") == list(RULE_FIELDS)
+
+
+def test_the_rules_table_example_is_what_the_command_prints() -> None:
+    from secret_scanner.app.rules import run_rules
+    from secret_scanner.core.models import OutputFormat
+
+    example = _fenced("", "## The rules listing `secret-rules/1`").splitlines()
+    produced = run_rules(OutputFormat.TABLE).splitlines()
+    for line in example:
+        assert line in produced
+    assert any(line.startswith("aws-access-key-id ") for line in example)

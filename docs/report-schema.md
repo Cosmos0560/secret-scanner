@@ -257,6 +257,46 @@ directory (the secrets were built at run time and exist nowhere in this reposito
 }
 ```
 
+## The rules listing `secret-rules/1`
+
+`secret-scanner rules` lists every built-in rule and detector; `--format json` writes one JSON
+document (ASCII only, two-space indent) and the default is a table. The listing is built from the
+packaged rules file and from the descriptions of the private key and entropy detectors. It holds no
+pattern, no fake specification and no example: nothing in it can be used to build a secret-shaped
+value. The command takes no path and writes only to standard output.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema` | string | Always `secret-rules/1`. |
+| `tool` | object | `name` and `version`. |
+| `rules_sha256` | string | SHA-256 (hex) of the built-in rules file. |
+| `rules` | array | One object per rule, below: the rules file's rules in file order, then the detectors. |
+
+### `rules[]`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | string | The rule id, or `private-key`, `entropy-base64`, `entropy-hex`. |
+| `name` | string | A short name. |
+| `detector` | string | `rule`, `private_key` or `entropy`. |
+| `severity` | string | The default severity; the private key detector lowers an encrypted key to `medium`. |
+| `confidence` | string | The default confidence; checksum, context and block completeness adjust it per finding. |
+| `description` | string | What the rule matches, in words. |
+| `keywords` | array | Lower-case literals; a rule's pattern runs only on a line that holds one. Empty for the entropy detectors, which run on every line. |
+
+A shortened table, produced by `secret-scanner rules`:
+
+```
+secret-scanner 0.1.0 - 16 built-in rules
+rules file sha256 52928a72916a6e9a2b4691ad56b7b0ca9b6333d0657928348959259ea1568ba1
+
+ID                         SEVERITY  CONFIDENCE  DETECTOR     KEYWORDS
+aws-access-key-id          high      high        rule         akia, asia, abia, acca
+  An AWS access key id (AKIA, ASIA, ABIA or ACCA followed by 16 base32 characters).
+aws-secret-access-key      critical  medium      rule         aws
+  A 40-character base64 value on a line that names both aws and secret.
+```
+
 ## What `scan` reads and writes
 
 - Reads: the files under the given directory (regular files only, never through a link), and the
