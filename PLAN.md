@@ -971,7 +971,9 @@ phase report written. Tagging and pushing are yours.
      the reflog, unreachable objects, submodule contents and LFS objects are not scanned in v1; the
      deliberate refusals of worktree and submodule `.git` files, alternates and grafts (exit code 3,
      v0.10 item 1); and that the Windows planted-executable test needs `csc.exe`.
-- v0.13 (2026-11-09): Phase 5 interpretations and additions, **awaiting acceptance** (details in
+- v0.13 (2026-11-09): Phase 5 interpretations and additions, **accepted by the owner on
+  2026-11-10**, together with the rewrite of the two unpushed commits `7b112f2` and `2fad516`
+  (redone from `0631ca6` to remove a hex value that the tool's own history scan flagged; details in
   docs/phase-reports.md; D11, D12 and the Phase 5 scope are otherwise built as written):
   1. JSONL (D11): the finding object also carries `suppressed_by` (last field), so that a
      suppressed finding listed with `--show-suppressed` can be told from a reported one; `timestamp`
