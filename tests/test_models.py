@@ -224,4 +224,4 @@ def test_report_target_display_must_be_escaped() -> None:
 def test_output_formats_are_the_documented_ones() -> None:
     from secret_scanner.core.models import OutputFormat
 
-    assert [fmt.value for fmt in OutputFormat] == ["table", "json", "jsonl"]
+    assert [fmt.value for fmt in OutputFormat] == ["table", "json", "jsonl", "sarif"]

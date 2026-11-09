@@ -45,6 +45,7 @@ from secret_scanner.core.models import (
     Target,
 )
 from secret_scanner.core.pathrules import native_flavour, validate_user_path
+from secret_scanner.core.ruleinfo import rule_infos
 from secret_scanner.core.sanitize import sanitize_path
 from secret_scanner.core.suppress import apply_suppressions, baseline_document, count_stale
 from secret_scanner.fs import safe_files
@@ -52,6 +53,7 @@ from secret_scanner.gitio.runner import GitRunner, Spawn, spawn_process
 from secret_scanner.host.hostinfo import resolve_host_label
 from secret_scanner.render.json_out import render_json
 from secret_scanner.render.jsonl import render_jsonl
+from secret_scanner.render.sarif import render_sarif
 from secret_scanner.render.table import render_table
 from secret_scanner.services.config import (
     ScanConfig,
@@ -216,11 +218,13 @@ def check_outputs(request: CommonRequest) -> None:
         raise UsageError("--output and --write-baseline name the same file")
 
 
-def _render(report: Report, output_format: OutputFormat, host: str) -> str:
+def _render(report: Report, output_format: OutputFormat, host: str, rules: Sequence[Rule]) -> str:
     if output_format is OutputFormat.JSON:
         return render_json(report, host)
     if output_format is OutputFormat.JSONL:
         return render_jsonl(report, host)
+    if output_format is OutputFormat.SARIF:
+        return render_sarif(report, rule_infos(rules))
     return render_table(report)
 
 
@@ -272,7 +276,7 @@ def finish_run(
         tool_version=__version__,
         history_complete=history_complete,
     )
-    text = _render(report, request.output_format, context.host)
+    text = _render(report, request.output_format, context.host, context.rules)
 
     messages: list[str] = []
     if request.write_baseline is not None:

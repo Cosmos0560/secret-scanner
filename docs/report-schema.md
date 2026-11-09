@@ -5,8 +5,8 @@ laid out, and what the exit code means. It is checked against the code by
 `tests/test_report_schema_doc.py`: a field, an enum value or an exit code that changes in the code
 and not here fails the gate.
 
-JSON and table are the two formats of Phase 3. JSONL and SARIF arrive in Phase 5 and get their own
-documents.
+JSON and table are the two formats of Phase 3. The JSONL format for mini-siem is documented in
+`siem-mapping.md` and SARIF in `sarif.md`; the `rules` command has its own section below.
 
 ## Promises
 

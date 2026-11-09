@@ -66,6 +66,7 @@ class OutputFormat(StrEnum):
     TABLE = "table"
     JSON = "json"
     JSONL = "jsonl"
+    SARIF = "sarif"
 
 
 class SuppressedBy(StrEnum):
