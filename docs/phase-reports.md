@@ -5,10 +5,10 @@ CLAUDE.md section 2, step 5. The last entry is the one a new session reads first
 
 ## In progress
 
-Nothing. Phase 4 (git history scan) is done and reported below. The next phase is Phase 5 (JSONL,
-SARIF, demo, `rules`, cross-format leak proof); it has not been started. Open items for the owner
-are under "Known gaps" of the Phase 4 report: PLAN.md v0.11 (accepted 2026-11-08, nothing open), the default
-gate time, and the first push of the commits after `38f6979`, which the owner makes.
+Phase 5 (JSONL, SARIF, demo, `rules`, cross-format leak proof) is under way in the session of
+2026-11-09. Step 0 (owner decisions, PLAN.md v0.12) is recorded at the end of this file; the slices
+are committed one by one. If this session stops early, the last green commit is the resume point
+and the list of slices still open is kept in the Phase 5 entry below.
 
 ## Phase 1 - Foundation, gate, hook, CI, pure core (2026-10-12)
 
@@ -406,3 +406,19 @@ Real coverage: 99.72% (branch, full gate, Windows, commit 89513f3); 99.81% in th
 Known gaps: default gate 53.6 s against the roughly 40 s of v0.9 (inside the 60 s of CLAUDE.md); the fix 89513f3 has not run on CI yet (the owner pushes), nor Python 3.11 and 3.12 (local 3.13, WSL 3.14); a time-of-check to time-of-use gap between finding git and starting it; the Windows planted-executable test needs csc.exe from Windows and fails, not skips, without it; not read in v1: commit messages, tag messages, reflog, unreachable objects, submodule contents, LFS objects; refused with exit code 3: worktree and submodule .git files, alternates, grafts
 Deviations from PLAN.md: v0.10 (accepted by the owner 2026-11-08); v0.11 (accepted by the owner 2026-11-08; D2 Binary made precise: temp tree and current directory refused, git.exe only, --git must be named git.exe on Windows, executable= passed to Popen); docs/threat-model.md and CHANGELOG.md started in Phase 4 instead of Phase 6; default gate time above the v0.9 target
 ```
+
+## Phase 5 - JSONL, SARIF, demo, rules, cross-format leak proof (2026-11-09)
+
+### Owner decisions at the start of the session (PLAN.md v0.12, accepted 2026-11-09)
+
+CI run 6 on `090df20` is green on all six jobs, so the F-1 fix is confirmed on the CI runners.
+
+1. The default gate at 53 s to 66 s is accepted for now. The real-git hostile tests stay in the
+   default run: they prove on every commit that each execution vector stays closed. The gap
+   "default gate above the v0.9 target" of the Phase 4 report is closed by this decision; the time is
+   measured again at the end of this phase.
+2. The README Limitations section (Phase 6) will list: the time-of-check to time-of-use gap between
+   resolving git and starting it; that commit messages, tag messages, the reflog, unreachable
+   objects, submodule contents and LFS objects are not scanned in v1; the deliberate refusals of
+   worktree and submodule `.git` files, alternates and grafts (exit code 3); that the Windows
+   planted-executable test needs `csc.exe`. Nothing is added to the README in this phase.

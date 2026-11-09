@@ -960,3 +960,14 @@ phase report written. Tagging and pushing are yours.
   resolved path is normalised and passed to `Popen` as `executable=` as well as `argv[0]`; the
   test helper `git_binary()` no longer uses `shutil.which`. New files: `docs/threat-model.md`
   (started here, Phase 6 completes it), `CHANGELOG.md`, `tests/test_git_program_resolution.py`.
+- v0.12 (2026-11-09): owner decisions at the start of the Phase 5 session, **accepted by the owner
+  on 2026-11-09** (CI run 6 on `090df20` is green on all six jobs; the F-1 fix is confirmed):
+  1. Default gate time: 53 s to 66 s is accepted for now. The real-git hostile tests stay in the
+     default run, because they prove on every commit that each execution vector stays closed.
+     This closes the "default gate above the v0.9 target" gap of the Phase 4 report; it is
+     measured again at the end of Phase 5.
+  2. The README Limitations section (completed in Phase 6) will list: the time-of-check to
+     time-of-use gap between resolving git and starting it; that commit messages, tag messages,
+     the reflog, unreachable objects, submodule contents and LFS objects are not scanned in v1; the
+     deliberate refusals of worktree and submodule `.git` files, alternates and grafts (exit code 3,
+     v0.10 item 1); and that the Windows planted-executable test needs `csc.exe`.
