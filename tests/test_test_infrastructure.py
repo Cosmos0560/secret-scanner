@@ -296,3 +296,64 @@ def test_identity_email_is_built_at_runtime_from_fragments() -> None:
     value = identity_email()
     assert value.count("@") == 1
     assert value.endswith(".invalid")
+
+
+# -- the audit hook (tests/audit.py) -------------------------------------------------------------
+
+
+def test_the_audit_recording_sees_writes_and_ignores_reads_and_the_null_device(
+    tmp_path: Path,
+) -> None:
+    from tests.audit import recording
+
+    target = tmp_path / "written.txt"
+    target.write_text("x", encoding="utf-8")
+    with recording() as events:
+        target.read_text(encoding="utf-8")  # a read is not a write
+        (tmp_path / "new.txt").write_text("y", encoding="utf-8")
+        os.mkdir(tmp_path / "made")
+        os.remove(target)
+        os.close(os.open(os.devnull, os.O_RDWR))  # a child's standard input
+    written = {Path(path) for path in events.written_paths()}
+    assert written == {tmp_path / "new.txt", tmp_path / "made", target}
+    assert events.network() == []
+    assert events.process() == []
+
+
+def test_the_audit_recording_does_nothing_outside_a_block(tmp_path: Path) -> None:
+    from tests.audit import recording
+
+    with recording() as events:
+        pass
+    (tmp_path / "later.txt").write_text("z", encoding="utf-8")
+    assert events.events == []
+
+
+def test_a_path_relative_to_an_unknown_descriptor_is_reported_as_unresolved() -> None:
+    from tests.audit import _mutated_paths
+
+    assert _mutated_paths("os.remove", ("name", 987_654)) == ["<fd 987654>/name"]
+    assert _mutated_paths("os.remove", ("name", None)) == ["name"]
+    absolute = os.path.abspath("abs-name")  # drive-qualified on Windows
+    assert _mutated_paths("os.remove", (absolute, 987_654)) == [absolute]
+    assert _mutated_paths("os.rename", ("a", "b", 987_654, None)) == ["<fd 987654>/a", "b"]
+    assert _mutated_paths("os.symlink", ("target-text", "link", None)) == ["link"]
+    assert _mutated_paths("tempfile.mkdtemp", (absolute,)) == [absolute]
+
+
+@pytest.mark.posix_only
+def test_a_path_relative_to_a_directory_descriptor_is_made_absolute(tmp_path: Path) -> None:
+    from tests.audit import recording
+
+    if not os.path.isdir("/proc/self/fd"):
+        pytest.skip("posix_only: this system cannot name a descriptor's directory (no /proc)")
+    (tmp_path / "gone.txt").write_text("x", encoding="utf-8")
+    descriptor = os.open(tmp_path, os.O_RDONLY)
+    try:
+        with recording() as events:
+            os.remove("gone.txt", dir_fd=descriptor)
+    finally:
+        os.close(descriptor)
+    assert [Path(path) for path in events.written_paths()] == [
+        Path(os.path.realpath(tmp_path)) / "gone.txt"
+    ]

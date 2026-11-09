@@ -166,6 +166,10 @@ def test_the_demo_touches_no_path_outside_its_temporary_directory(real_run: Real
 def test_the_demo_makes_no_network_call_and_changes_no_process_state(real_run: RealRun) -> None:
     assert real_run.events.network() == []
     assert real_run.events.process() == []
+    # Python may start a child with os.posix_spawn from inside subprocess: then it is git
+    git = os.path.normcase(os.path.realpath(real_run.git))
+    for program in real_run.events.posix_spawned():
+        assert os.path.normcase(os.path.realpath(program)) == git
 
 
 @pytest.mark.requires_git
