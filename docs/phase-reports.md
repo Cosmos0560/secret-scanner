@@ -5,10 +5,10 @@ CLAUDE.md section 2, step 5. The last entry is the one a new session reads first
 
 ## In progress
 
-Phase 5 (JSONL, SARIF, demo, `rules`, cross-format leak proof) is under way in the session of
-2026-11-09. Step 0 (owner decisions, PLAN.md v0.12) is recorded at the end of this file; the slices
-are committed one by one. If this session stops early, the last green commit is the resume point
-and the list of slices still open is kept in the Phase 5 entry below.
+Nothing. Phase 5 (JSONL, SARIF, `rules`, demo, cross-format leak proof) is done and reported at the
+end of this file; PLAN.md v0.13 (its interpretations) awaits the owner's acceptance. The next phase
+is Phase 6 (measurement, docs, README, release checks); it has not been started. The commits after
+`090df20` are local: the owner pushes them.
 
 ## Phase 1 - Foundation, gate, hook, CI, pure core (2026-10-12)
 
@@ -422,3 +422,131 @@ CI run 6 on `090df20` is green on all six jobs, so the F-1 fix is confirmed on t
    objects, submodule contents and LFS objects are not scanned in v1; the deliberate refusals of
    worktree and submodule `.git` files, alternates and grafts (exit code 3); that the Windows
    planted-executable test needs `csc.exe`. Nothing is added to the README in this phase.
+
+### Slices and commits
+
+| Commit | What |
+|---|---|
+| `9357ac6` | step 0: the owner's decisions (PLAN.md v0.12) |
+| `8be925c` | `--format jsonl` (`secret-event/1`), `clip_display` in the sanitiser |
+| `9fe0fea` | `rules` (table and JSON, `secret-rules/1`), `core/ruleinfo.py`, drift tests |
+| `cda8a74` | `--format sarif`, `docs/sarif.md`, the structural checker, drift tests |
+| `0631ca6` | `demo`: `fs/sandbox.py`, `gitio/demo_git.py`, `app/demo.py`, audit-hook guard tests |
+| `2710930` | cross-format leak matrix, hostile names per format, `docs/siem-mapping.md` with the real mini-siem ingest |
+| `5ae388b` | a custom rule's name and description are escaped; PLAN.md v0.13 |
+| `fa248b5` | the audit helper resolves descriptor-relative paths and accepts git's own `posix_spawn` (found by the Linux run) |
+
+### Real mini-siem check
+
+mini-siem 1.0.0 (commit `6adc008`) was used read-only, from its own virtual environment, as the
+owner asked. Done on 2026-11-09:
+
+- Input: a five-line JSONL file made by the tool from generated fakes: `scan . --format jsonl` over
+  the sample project (2 findings and the summary line) and `scan-git` over a throw-away repository
+  (1 finding with its commit and the summary line). Everything (the file, the data directory, the
+  working directory, `TEMP`) was in a temporary folder outside both repositories.
+- The program was started as `python -B -m mini_siem --data-dir <temp>/data ingest
+  <temp>/secret-events.jsonl --format json` with `PYTHONDONTWRITEBYTECODE=1` and a scrubbed
+  environment, so it could not write byte code into its own folder.
+- Proof that nothing in the mini-siem folder changed: a fingerprint of all 15 332 entries (path,
+  mode, size, modification time of each; no file opened) was taken before the first command and after
+  the last (an ingest, a repeated ingest, `search`, `search --json`, `stats`, `--version`). Both were
+  the same, `a6b78a42eb0f...` (first 12 digits).
+
+Real output:
+
+```
+<temp>/secret-events.jsonl: format json, 5 line(s), 5 record(s), 0 blank, 0 over-long
+events: 5 parsed, 5 newly stored, 0 already stored
+parse failures: 0 (dead-letter file: <temp>/data/deadletter.jsonl), over-long lines: 0
+alerts: 0 stored (0 allowlisted), 0 duplicate(s) suppressed by cooldown
+```
+
+The same file ingested again: `events: 5 parsed, 0 newly stored, 5 already stored`. `mini-siem stats`:
+`events: 5`, `alerts: 0`, `parse failures: 0.00% (0 dead-lettered / 5 seen)`. `search` listed the five
+events newest first, all `json_event`, with the host and the message of each line; `search --json`
+showed the attributes `declared_event_type` (`secret.finding` or `secret.scan_summary`) and
+`secret.*` for every other value. The full search output and one stored event are in
+`docs/siem-mapping.md`. Observed limits of mini-siem 1.0.0 (recorded there as known gaps): a query
+cannot name a `secret.*` attribute (free text finds the message), and no detection rule was written
+for these events.
+
+### What the phase found
+
+1. **The tool's own history scan caught a documentation hex value (full gate, Windows).**
+   `tests/test_self_history.py` reported two `entropy-hex` findings at `docs/siem-mapping.md:193:28`
+   (64 digits, `ea0a...`) and `:195:28` (32 digits, `357a...`) in commit `7b112f2`: the stored-event
+   example listed a file hash and a fingerprint under the key names `secret.file_sha256` and
+   `secret.fingerprint`, and a long hex value next to a key that contains `secret` is exactly what the
+   D5 detector reports. They are hashes of generated fakes, not secrets, but CLAUDE.md section 4 item
+   5 says to remove the string and never to allowlist it. The two values are now cut to their first 12
+   digits in the document (the drift test accepts exactly those two as cut). Because the commit was
+   local and unpushed, the two unpushed commits (`7b112f2`, `2fad516`) were redone from `0631ca6`
+   with the same messages and the same split of files (`git reset --mixed`, a backup of the diff kept
+   outside the repository); the old commits are no longer reachable from any branch or tag. The scan of the final
+   history: `scan-git .` reports 52 commits, 312 blobs, no findings.
+2. **The Linux run found two bugs in the new guard tests (WSL).** On Linux `shutil.rmtree` works
+   relative to open directory descriptors, so the audit events held bare names (49 "outside"
+   paths), and Python 3.14's `subprocess` starts a child with `os.posix_spawn`, which the guard counted
+   as a process change. `tests/audit.py` now resolves a descriptor's directory through
+   `/proc/self/fd` at event time (and records `<fd N>/name`, which no test accepts, where that is
+   impossible) and the test checks that every `posix_spawn` target is the resolved git. Four tests of
+   the helper itself were added. The product code was not affected.
+3. **A configuration file can put any text in a custom rule's name and description.** The SARIF
+   renderer refused the whole report (an internal error, exit code 2) when it met a control character
+   there. `info_for_rule` now escapes both with the single sanitiser; a test runs a rule whose name
+   holds an ESC, a bidirectional override and a zero-width space through SARIF, JSON and JSONL.
+4. **The file-writing tool decodes unicode escapes.** A test file written with a backslash-u escape
+   for a bidirectional override contained the raw character, and the repository hygiene test refused
+   it. Tests build such characters with `chr()`.
+5. One command that joined `gate.py` with a `grep` was blocked by the Claude Code hook, as designed;
+   nothing ran. Commands were split afterwards.
+
+### Measured (this machine: Windows 11, Python 3.13.14, git 2.54.0.windows.1, 2026-11-09)
+
+- Full gate, committed code `fa248b5`: 2508 passed, 23 skipped (POSIX-only), **225.2 s** pytest,
+  **231.8 s** in total, **99.72%** branch coverage (the lines it misses are POSIX branches of
+  `fs/safe_files.py`, `fs/sandbox.py`, `gitio/demo_git.py` and the runner).
+- Default gate, same code: 2427 passed, 20 skipped, 84 deselected, **74.8 s** pytest, **82.1 s** in
+  total, 99.61%. The other runs of this tree: 72.7 s, 74.9 s, 77.8 s in total; one run took 95.5 s
+  while the machine was busy (mypy took twice as long in that run). End of Phase 4: 53.6 s with 2214
+  tests. Phase 5's own test files cost about 12 s of the default run (219 tests, measured alone,
+  without coverage): the real-git cases (4.6 s for `scan-git` through JSONL and SARIF, 1.4 s for the
+  demo run, 1.4 s for the demo variant with a history that lacks the secret), the cross-format
+  matrix and the 44 sandbox tests. The rest of the increase is variance on this machine. The default
+  gate is above the 60 s of CLAUDE.md and below the 90 s at which tests must move to `slow`; the
+  owner decides (see Known gaps).
+- WSL Ubuntu, git 2.53.0, Python 3.14.4 (outside the CI matrix, as CLAUDE.md allows), full gate on
+  the committed `fa248b5`: 2504 passed, 27 skipped (Windows-only), 20.06 s pytest, 30.1 s in total,
+  **99.77%**. The first Linux run, on `5ae388b`, failed the two guard tests of item 2; the run above
+  is after the fix.
+
+`pytest -q` summary lines: Windows full `2508 passed, 23 skipped in 224.23s (0:03:44)`; Windows default
+`2427 passed, 20 skipped, 84 deselected in 73.74s (0:01:13)`; WSL full `2504 passed, 27 skipped in 20.06s`.
+
+`git log --oneline -12` before this report was committed:
+
+```
+fa248b5 test: resolve directory-descriptor paths in the audit helper and accept git's own posix_spawn (found by the Linux run)
+5ae388b fix: escape the name and description of a custom rule in rule listings and SARIF; record the Phase 5 interpretations (PLAN.md v0.13)
+2710930 test: add the cross-format leak matrix, hostile names per format and docs/siem-mapping.md with a real mini-siem ingest
+0631ca6 feat: add the demo command with a sandboxed temporary tree, a throw-away repository and audit-hook guard tests
+cda8a74 feat: add the SARIF 2.1.0 output format with structural tests, docs/sarif.md and drift tests
+9fe0fea feat: add the rules command (table and JSON, secret-rules/1) with drift tests against the rules file
+8be925c feat: add the JSONL output format (secret-event/1) shaped for mini-siem's generic JSON parser
+9357ac6 docs: record the owner's Phase 5 decisions (PLAN.md v0.12)
+090df20 docs: record the owner's acceptance of PLAN.md v0.11
+7ea2020 docs: add the Phase 4 report, finding F-1 and the measured gate numbers
+89513f3 fix: never run a git program found in the current directory, a relative PATH entry or a temp tree (Windows binary planting, CI run 5)
+38f6979 test: cover the runner's pipe, writer and cleanup edges
+```
+
+`git status --short` before this report was committed: clean.
+
+```
+Built: --format jsonl (secret-event/1, one finding per line plus a summary line, ingested by the real mini-siem 1.0.0 without a change to it) and --format sarif (SARIF 2.1.0: rule list, level and security-severity mapping, percent-encoded URIs from the exact path, fingerprints, suppressions, notifications), the rules command (table and JSON), the demo command (sandbox, throw-away repository with a secret committed and removed, real scan and scan-git, cleanup in a finally and on Ctrl-C, exit 3 without git), Ctrl-C exit 130, docs/sarif.md and docs/siem-mapping.md with drift tests, the cross-format leak matrix and hostile-name tests per format, audit-hook guard tests for the demo
+Tests added: 218 (suite 2531 collected, 84 slow): JSONL 18, SARIF 59 and doc drift 11, rules 15, sandbox 44, demo repository builder 13, demo 21 (one real process, slow), output formats 5 (three slow), siem-mapping drift 14, plus additions to the sanitiser (clip_display), the schema doc, the scan leak matrix (all four formats, shown and hidden suppressions, error paths), the audit helper and the model tests
+Real coverage: 99.72% (branch, full gate, Windows, commit fa248b5); 99.77% in the WSL Linux full gate (git 2.53.0, Python 3.14.4); floor 85
+Known gaps: SARIF is not validated against the official schema (no PyPI package ships it; structural tests only) and was not uploaded to GitHub code scanning; no mini-siem detection rule written, and mini-siem 1.0.0 cannot search by secret.* attribute; default gate 72.7 s to 82.1 s on this machine (above CLAUDE.md's 60 s, below its 90 s); Phase 5 code has not run on CI (Python 3.11 and 3.12 untested locally: local 3.13, WSL 3.14); the audit-hook guard fails closed on a system without /proc/self/fd (macOS, not in the CI matrix); rules takes no user rules file (D4 does not cover one); file-integrity-monitor's siem-mapping.md was not read (CLAUDE.md section 4 allows only mini-siem's parser source); the demo header shows its random temporary path; from Phase 4, still open for the README: TOCTOU between resolving git and starting it, commit and tag messages, reflog, unreachable objects, submodule contents and LFS not scanned, the deliberate exit-3 refusals, csc.exe for the Windows planted-executable test
+Deviations from PLAN.md: v0.13 awaiting acceptance (JSONL suppressed_by field and summary fields; SARIF driver.version, informationUri from the origin remote, URI from the exact path, generic suppression justification, run properties; rules lists 13 rules and 3 detectors; demo exit codes and Ctrl-C 130; new modules); the two unpushed commits 7b112f2 and 2fad516 were redone from 0631ca6 to remove a hex value the tool's own history scan flagged (no allowlist)
+```
