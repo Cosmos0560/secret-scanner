@@ -12,6 +12,7 @@ from secret_scanner.core.models import (
     Location,
     Redacted,
     Report,
+    Rule,
     ScanIssue,
     ScanStats,
     Severity,
@@ -41,6 +42,18 @@ class FakeClock:
     def advance(self, seconds: float) -> None:
         self._now += timedelta(seconds=seconds)
         self._monotonic += seconds
+
+
+def public_prefix_length(rule: Rule) -> int:
+    """How many leading characters of a rule's fake are the format's fixed text, which is public
+    and may appear in a description or a keyword: the literal segments before the first generated
+    one (at least the rule's `shown_chars`)."""
+    length = 0
+    for segment in rule.fake:
+        if segment.charset:
+            break
+        length += sum(len(part) for part in segment.parts)
+    return max(length, rule.shown_chars)
 
 
 # -- model builders for renderer and application tests ---------------------------------------

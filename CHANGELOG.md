@@ -18,6 +18,19 @@ Format: newest first. Versions follow the PLAN.md phases until the first release
 
 - `scan-git` and `scan --gitignore` (Phase 4): git history scanning through the hardened runner
   (`docs/git-hardening.md`).
+- `--format jsonl` (Phase 5): one finding per line and a final summary line, schema
+  `secret-event/1`, shaped for mini-siem's generic JSON parser; ingested with the real mini-siem
+  1.0.0 (`docs/siem-mapping.md`).
+- `--format sarif` (Phase 5): SARIF 2.1.0 with the rule list, severity levels, `security-severity`,
+  percent-encoded artifact URIs, fingerprints, suppressions and notifications for scan issues
+  (`docs/sarif.md`). Not validated against the official schema and not uploaded to GitHub code
+  scanning: both are listed known gaps.
+- `secret-scanner rules` (Phase 5): the built-in rules and detectors as a table or JSON
+  (`secret-rules/1`, `docs/report-schema.md`); it prints no example secret.
+- `secret-scanner demo` (Phase 5): fake secrets planted in a temporary directory and a throw-away
+  repository, scanned through the real code, shown redacted and removed again, also on failure and
+  on Ctrl-C. Exit code 3 without git (the history part is skipped).
+- Ctrl-C ends any command with exit code 130 and the message `interrupted`.
 
 ### Known, deliberate refusals
 

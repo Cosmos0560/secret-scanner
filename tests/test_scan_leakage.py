@@ -3,10 +3,12 @@
 exception text (CLAUDE.md section 5, invariant 1; PLAN.md D7, D16).
 
 Every built-in rule, the private key detector and the entropy detector are exercised through
-every output path that exists in this phase. The full matrix (every rule through every format and
-every error path) is the slow run, which the full gate and CI execute; the default gate runs one
-representative of each detector kind through the whole matrix, and every rule through the table
-and the JSON renderer."""
+every output path of `scan`: the four formats (table, JSON, JSONL, SARIF) on stdout and in files,
+with findings suppressed and hidden or listed, and every error path. The full matrix (every rule
+through every format and every error path) is the slow run, which the full gate and CI execute; the
+default gate runs one representative of each detector kind through the whole matrix, and every rule
+through all four renderers in-process. `scan-git` is covered in tests/test_git_scan.py and
+tests/test_output_formats.py."""
 
 from __future__ import annotations
 
@@ -24,7 +26,7 @@ from secret_scanner.core.fakes import build_fake, fake_entropy_token, fake_priva
 from secret_scanner.core.models import Confidence, Detector, OutputFormat
 from secret_scanner.services.loader import dump_yaml, load_builtin_rules
 from tests.conftest import leak_check
-from tests.helpers import FakeClock
+from tests.helpers import FakeClock, public_prefix_length
 
 SEED = "leak"
 ENTROPY_SHOWN = 4
@@ -51,7 +53,7 @@ def _planted() -> list[Planted]:
             secret = build_fake(rule, SEED)
             # one line that carries the context words the context-gated rules need
             text = f"aws_secret_access_key = {secret}\n"
-            planted.append(Planted(rule.id, text, secret, rule.shown_chars))
+            planted.append(Planted(rule.id, text, secret, public_prefix_length(rule)))
     key = fake_private_key(SEED, label="RSA")
     body = "".join(line for line in key.splitlines() if not line.startswith("-----"))
     planted.append(Planted("private-key", key, body, 0))
@@ -137,7 +139,11 @@ def test_nothing_that_scan_emits_contains_the_secret(
     assert "settings.txt" in capture.pieces[0][1]
 
     cli("json", "scan", str(root), "--format", "json", "--min-confidence", "low")
+    cli("jsonl", "scan", str(root), "--format", "jsonl", "--min-confidence", "low")
+    cli("sarif", "scan", str(root), "--format", "sarif", "--min-confidence", "low")
     report = work / "report.json"
+    events = work / "events.jsonl"
+    sarif_file = work / "scan.sarif"
     baseline = work / "baseline.yaml"
     cli(
         "write",
@@ -154,6 +160,18 @@ def test_nothing_that_scan_emits_contains_the_secret(
     )
     capture.add("report file", report.read_text("utf-8"))
     capture.add("baseline file", baseline.read_text("utf-8"))
+    for label, target, fmt in (("jsonl", events, "jsonl"), ("sarif", sarif_file, "sarif")):
+        cli(
+            f"{label} file",
+            "scan",
+            str(root),
+            "--format",
+            fmt,
+            "--min-confidence",
+            "low",
+            "--output",
+            str(target),
+        )
     assert (
         cli(
             "suppressed",
@@ -179,6 +197,11 @@ def test_nothing_that_scan_emits_contains_the_secret(
         "--format",
         "json",
     )
+    for fmt in ("jsonl", "sarif"):
+        for shown in (True, False):
+            argv = ["scan", str(root), "--baseline", str(baseline), "--format", fmt]
+            argv += ["--min-confidence", "low"] + (["--show-suppressed"] if shown else [])
+            assert cli(f"suppressed-{fmt}-{'shown' if shown else 'hidden'}", *argv) == 0
 
     # error paths with the secret in the files the tool reads
     secret = planted.needle
@@ -205,6 +228,11 @@ def test_nothing_that_scan_emits_contains_the_secret(
     garbage.write_bytes(b"version: 1\nsuppress: [" + secret.encode("ascii") + b"\n")
     assert cli("baseline-yaml", "scan", str(root), "--baseline", str(garbage)) == 2
     assert cli("output-exists", "scan", str(root), "--output", str(report)) == 2
+    for fmt in ("jsonl", "sarif"):
+        as_format = ["scan", str(root), "--format", fmt]
+        assert cli(f"config-key {fmt}", *as_format, "--config", bad_config) == 2
+        assert cli(f"baseline {fmt}", *as_format, "--baseline", bad_baseline) == 2
+        assert cli(f"output-exists {fmt}", *as_format, "--output", str(report)) == 2
 
     # an internal failure that carries the secret in its message must print its type only
     def explode(*args: object, **kwargs: object) -> object:
@@ -217,7 +245,7 @@ def test_nothing_that_scan_emits_contains_the_secret(
     # The test's own input files hold the secret by construction and are not checked.
     inputs = {path.name for path in work.glob("bad-*.yaml")} | {"garbage.yaml"}
     written = sorted(path.name for path in work.iterdir() if path.name not in inputs)
-    assert written == ["baseline.yaml", "report.json"]
+    assert written == ["baseline.yaml", "events.jsonl", "report.json", "scan.sarif"]
     for name in written:
         capture.add(f"file {name}", (work / name).read_bytes().decode("utf-8", "replace"))
 
@@ -230,23 +258,36 @@ def test_nothing_that_scan_emits_contains_the_secret(
 
 
 @pytest.mark.parametrize("planted", PLANTED, ids=lambda p: p.name)
-def test_the_table_and_the_json_of_every_rule_carry_no_secret(
-    tmp_path: Path, planted: Planted
-) -> None:
-    """Every rule's fake through the two renderers, in-process (the CLI matrix above covers the
-    other output paths for one representative of each detector kind)."""
+def test_every_format_of_every_rule_carries_no_secret(tmp_path: Path, planted: Planted) -> None:
+    """Every rule's fake through the four renderers, with the finding reported, suppressed and
+    hidden, and suppressed and listed, in-process (the CLI matrix above covers the other output
+    paths for one representative of each detector kind)."""
     root = tmp_path / "tree"
     root.mkdir()
     (root / "settings.txt").write_text(planted.file_text, encoding="utf-8", newline="\n")
-    for output_format in (OutputFormat.TABLE, OutputFormat.JSON):
-        request = scan_module.ScanRequest(
-            path=str(root), output_format=output_format, min_confidence=Confidence.LOW
-        )
-        outcome = scan_module.run_scan(request, FakeClock())
-        assert outcome.report.findings, f"{planted.name}: nothing detected"
-        problem = leak_check(outcome.text, planted.needle, allowed_shown=planted.allowed_shown)
-        if problem is not None:
-            pytest.fail(f"{planted.name} / {output_format.value}: {problem}", pytrace=False)
+    baseline = tmp_path / "baseline.yaml"
+    first = scan_module.ScanRequest(
+        path=str(root), min_confidence=Confidence.LOW, write_baseline=str(baseline)
+    )
+    assert scan_module.run_scan(first, FakeClock()).report.findings, planted.name
+    for output_format in OutputFormat:
+        for suppressed in (None, "hidden", "shown"):
+            request = scan_module.ScanRequest(
+                path=str(root),
+                output_format=output_format,
+                min_confidence=Confidence.LOW,
+                baseline=None if suppressed is None else str(baseline),
+                show_suppressed=suppressed == "shown",
+            )
+            outcome = scan_module.run_scan(request, FakeClock())
+            label = f"{planted.name} / {output_format.value} / {suppressed}"
+            if suppressed is None:
+                assert outcome.report.findings, f"{label}: nothing detected"
+            elif suppressed == "shown":
+                assert [f.suppressed_by for f in outcome.report.findings], f"{label}: none listed"
+            problem = leak_check(outcome.text, planted.needle, allowed_shown=planted.allowed_shown)
+            if problem is not None:
+                pytest.fail(f"{label}: {problem}", pytrace=False)
 
 
 @pytest.mark.parametrize("planted", PLANTED[:3], ids=lambda p: p.name)

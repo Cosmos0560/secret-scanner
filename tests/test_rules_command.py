@@ -21,7 +21,7 @@ from secret_scanner.core.detect.entropy import (
 from secret_scanner.core.detect.private_key import HEADER_KEYWORD
 from secret_scanner.core.errors import UsageError
 from secret_scanner.core.fakes import build_fake, fake_entropy_token, fake_private_key
-from secret_scanner.core.models import Confidence, Detector, OutputFormat, Rule, Severity
+from secret_scanner.core.models import Confidence, Detector, OutputFormat, Severity
 from secret_scanner.core.ruleinfo import (
     DETECTOR_INFOS,
     PRIVATE_KEY_KEYWORD,
@@ -39,7 +39,7 @@ from secret_scanner.render.rules_out import (
     rules_document,
 )
 from secret_scanner.services.loader import load_builtin_rules
-from tests.helpers import PROJECT_ROOT
+from tests.helpers import PROJECT_ROOT, public_prefix_length
 
 RULES_FILE = PROJECT_ROOT / "src" / "secret_scanner" / "rules" / "builtin.yaml"
 DETECTOR_IDS = [PRIVATE_KEY_ID, ENTROPY_BASE64_ID, ENTROPY_HEX_ID]
@@ -168,17 +168,6 @@ def test_the_renderers_check_every_string_they_are_given() -> None:
 
 
 # -- no secret -----------------------------------------------------------------------------------
-
-
-def public_prefix_length(rule: Rule) -> int:
-    """How many leading characters of a rule's fake are the format's fixed text, which is public
-    and may appear in a description: the literal segments before the first generated one."""
-    length = 0
-    for segment in rule.fake:
-        if segment.charset:
-            break
-        length += sum(len(part) for part in segment.parts)
-    return max(length, rule.shown_chars)
 
 
 def test_no_rule_fake_appears_in_the_listing(assert_not_leaked: Callable[..., None]) -> None:
