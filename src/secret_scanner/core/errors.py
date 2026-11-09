@@ -78,6 +78,13 @@ class ScanIOError(SecretScannerError):
     exit_code = ExitCode.USAGE
 
 
+class DemoError(SecretScannerError):
+    """The demo could not run as designed: its temporary directory could not be made or removed, or
+    a result it checks for was not there."""
+
+    exit_code = ExitCode.USAGE
+
+
 class GitError(SecretScannerError):
     """git is missing, too old, refused, or failed."""
 

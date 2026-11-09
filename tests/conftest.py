@@ -105,6 +105,13 @@ GUARDED_FUNCTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "is_inside": ("root", "candidate"),
         "is_same_path": ("first", "second"),
     },
+    "secret_scanner.fs.sandbox": {
+        "create_sandbox": ("parent",),
+        "remove_sandbox": ("root",),
+        "write_text": ("root",),
+        "make_directory": ("root",),
+        "member": ("root",),
+    },
 }
 
 

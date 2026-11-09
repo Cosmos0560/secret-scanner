@@ -16,6 +16,7 @@ from typing import NoReturn
 
 from secret_scanner import __version__
 from secret_scanner.app.common import ScanOutcome
+from secret_scanner.app.demo import run_demo
 from secret_scanner.app.rules import run_rules
 from secret_scanner.app.scan import ScanRequest, run_scan
 from secret_scanner.app.scan_git import GitScanRequest, run_scan_git
@@ -25,6 +26,7 @@ from secret_scanner.core.sanitize import sanitize
 from secret_scanner.host.clock import SystemClock
 
 PROG = "secret-scanner"
+INTERRUPTED = 130  # the shell convention for SIGINT, outside the tool's own exit codes
 
 
 class _Parser(argparse.ArgumentParser):
@@ -135,6 +137,20 @@ def _add_scan_git_parser(subcommands: argparse._SubParsersAction[_Parser]) -> No
     _add_report_options(scan_git)
 
 
+def _add_demo_parser(subcommands: argparse._SubParsersAction[_Parser]) -> None:
+    subcommands.add_parser(
+        "demo",
+        help="plant fake secrets in a temporary directory and repository, scan them, clean up",
+        description=(
+            "Plant generated fake secrets in a temporary directory and in a throw-away git "
+            "repository, scan both through the real code, show the redacted result and remove "
+            "everything. Nothing outside the temporary directory is touched and nothing is "
+            "sent anywhere."
+        ),
+        allow_abbrev=False,
+    )
+
+
 def _add_rules_parser(subcommands: argparse._SubParsersAction[_Parser]) -> None:
     rules = subcommands.add_parser(
         "rules",
@@ -165,6 +181,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_scan_parser(subcommands)
     _add_scan_git_parser(subcommands)
     _add_rules_parser(subcommands)
+    _add_demo_parser(subcommands)
     return parser
 
 
@@ -234,6 +251,15 @@ def _run_rules_command(args: argparse.Namespace) -> ExitCode:
     return ExitCode.OK
 
 
+def _run_demo_command() -> ExitCode:
+    outcome = run_demo(SystemClock())
+    sys.stdout.write(outcome.text)
+    sys.stdout.flush()
+    for notice in outcome.notices:
+        print(f"{PROG}: {notice}", file=sys.stderr)
+    return outcome.exit_code
+
+
 def _dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> ExitCode:
     """Run the requested command; with none given, print usage."""
     if args.command == "scan":
@@ -242,6 +268,8 @@ def _dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Exit
         return _run_scan_git_command(args)
     if args.command == "rules":
         return _run_rules_command(args)
+    if args.command == "demo":
+        return _run_demo_command()
     parser.print_usage(sys.stderr)
     return ExitCode.USAGE
 
@@ -260,6 +288,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     except SecretScannerError as error:
         print(f"{PROG}: error: {error}", file=sys.stderr)
         return int(error.exit_code)
+    except KeyboardInterrupt:
+        # Ctrl-C: whatever the command had to clean up (the demo's directory) was cleaned up by
+        # its own `finally` before the interrupt reached here.
+        print(f"{PROG}: interrupted", file=sys.stderr)
+        return INTERRUPTED
     except Exception as error:
         # Top-level handler: prints the type name only (a message could carry content) and exits
         # 2, never 1, which means "findings".

@@ -147,6 +147,7 @@ SAME_LAYER_ALLOWED: Mapping[str, frozenset[str]] = {
     "services.loader": frozenset(),
     "services.config": frozenset({"services.loader"}),
     "services.git_scanner": frozenset({"services.fs_scanner"}),
+    "app.demo": frozenset({"app.common", "app.scan", "app.scan_git"}),
     "app.scan": frozenset({"app.common"}),
     "app.scan_git": frozenset({"app.common"}),
     "cli.main": frozenset(),
