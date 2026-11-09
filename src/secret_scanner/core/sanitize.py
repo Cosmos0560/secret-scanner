@@ -131,6 +131,32 @@ def sanitize_path(
     )
 
 
+_ESCAPE_LENGTHS = {"x": 4, "u": 6, "U": 10}
+
+
+def clip_display(text: str, max_chars: int) -> tuple[str, bool]:
+    """Cut text that `sanitize` already escaped to at most `max_chars`, without splitting an
+    escape sequence. Returns the text and whether it was cut. No marker is added: machine formats
+    carry the cut as a separate flag.
+
+    An escape is a backslash and the character after it: `\\\\`, `\\t`, `\\n`, `\\r` are two
+    characters, `\\xNN` four, `\\uNNNN` six and `\\UNNNNNNNN` ten (see the module docstring).
+    """
+    if max_chars < 0:
+        raise ValueError("max_chars must not be negative")
+    if len(text) <= max_chars:
+        return text, False
+    index = 0
+    while index < len(text):
+        step = 1
+        if text[index] == "\\" and index + 1 < len(text):
+            step = _ESCAPE_LENGTHS.get(text[index + 1], 2)
+        if index + step > max_chars:
+            break
+        index += step
+    return text[:index], True
+
+
 def is_display_safe(text: str) -> bool:
     """True when `text` could have come out of `sanitize`: it holds no character that `sanitize`
     would escape, apart from the backslash, which only occurs inside the escape sequences.

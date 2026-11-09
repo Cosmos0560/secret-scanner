@@ -61,10 +61,11 @@ class Target(StrEnum):
 
 
 class OutputFormat(StrEnum):
-    """Report formats (PLAN.md D11); `jsonl` and `sarif` arrive with Phase 5."""
+    """Report formats (PLAN.md D11, D12)."""
 
     TABLE = "table"
     JSON = "json"
+    JSONL = "jsonl"
 
 
 class SuppressedBy(StrEnum):

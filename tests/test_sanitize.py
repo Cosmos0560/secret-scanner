@@ -7,7 +7,13 @@ import unicodedata
 
 import pytest
 
-from secret_scanner.core.sanitize import ELLIPSIS, sanitize, sanitize_bytes, sanitize_path
+from secret_scanner.core.sanitize import (
+    ELLIPSIS,
+    clip_display,
+    sanitize,
+    sanitize_bytes,
+    sanitize_path,
+)
 
 BACKSLASH = chr(92)
 _ESCAPE = re.compile(r"\\(x[0-9a-f]{2}|u[0-9a-f]{4}|U[0-9a-f]{8}|[tnr\\])")
@@ -259,3 +265,59 @@ def test_windows_path_display_honours_the_bound_and_ascii_only() -> None:
     assert shown.endswith(ELLIPSIS)
     assert BACKSLASH not in shown
     assert sanitize_path("caf" + chr(0xE9), windows=True, ascii_only=True) == "caf" + esc("xe9")
+
+
+# -- clip_display: cutting escaped text without splitting an escape -----------------------------
+
+
+def test_clip_display_leaves_text_that_fits_alone() -> None:
+    assert clip_display("abc", 3) == ("abc", False)
+    assert clip_display("", 0) == ("", False)
+
+
+def test_clip_display_cuts_plain_text_at_the_bound() -> None:
+    assert clip_display("abcdef", 4) == ("abcd", True)
+    assert clip_display("abcdef", 0) == ("", True)
+
+
+@pytest.mark.parametrize(
+    ("escape", "length"),
+    [
+        (esc("t"), 2),
+        (esc("n"), 2),
+        (esc("r"), 2),
+        (BACKSLASH * 2, 2),
+        (esc("x1b"), 4),
+        (esc("u202e"), 6),
+        (esc("U0001f600"), 10),
+    ],
+)
+def test_clip_display_never_splits_an_escape_sequence(escape: str, length: int) -> None:
+    text = "ab" + escape + "cd"
+    assert len(escape) == length
+    for bound in range(len(text)):
+        cut, was_cut = clip_display(text, bound)
+        assert was_cut
+        assert len(cut) <= bound
+        assert text.startswith(cut)
+        assert cut in {text[:i] for i in (0, 1, 2, 2 + length, 3 + length)}
+    assert clip_display(text, len(text)) == (text, False)
+
+
+def test_clip_display_of_a_sanitised_hostile_string_round_trips() -> None:
+    original = "x" + chr(0x1B) + chr(0x202E) + chr(0x1F600) + BACKSLASH + chr(0xDCFF) + "end"
+    shown = sanitize(original)
+    for bound in range(len(shown) + 1):
+        cut, _ = clip_display(shown, bound)
+        assert unescape(cut) == original[: len(unescape(cut))]
+
+
+def test_clip_display_treats_a_lone_trailing_backslash_as_one_character() -> None:
+    # not produced by the sanitiser, but the function must still be total
+    assert clip_display("ab" + BACKSLASH, 2) == ("ab", True)
+    assert clip_display("ab" + BACKSLASH, 3) == ("ab" + BACKSLASH, False)
+
+
+def test_clip_display_refuses_a_negative_bound() -> None:
+    with pytest.raises(ValueError, match="negative"):
+        clip_display("abc", -1)

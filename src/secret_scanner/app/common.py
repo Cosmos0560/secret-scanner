@@ -51,6 +51,7 @@ from secret_scanner.fs import safe_files
 from secret_scanner.gitio.runner import GitRunner, Spawn, spawn_process
 from secret_scanner.host.hostinfo import resolve_host_label
 from secret_scanner.render.json_out import render_json
+from secret_scanner.render.jsonl import render_jsonl
 from secret_scanner.render.table import render_table
 from secret_scanner.services.config import (
     ScanConfig,
@@ -218,6 +219,8 @@ def check_outputs(request: CommonRequest) -> None:
 def _render(report: Report, output_format: OutputFormat, host: str) -> str:
     if output_format is OutputFormat.JSON:
         return render_json(report, host)
+    if output_format is OutputFormat.JSONL:
+        return render_jsonl(report, host)
     return render_table(report)
 
 
