@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 from secret_scanner.core.models import Confidence, Detector, Rule, Severity
 from secret_scanner.core.rules import ENTROPY_BASE64_ID, ENTROPY_HEX_ID, PRIVATE_KEY_ID
+from secret_scanner.core.sanitize import sanitize
 
 PRIVATE_KEY_KEYWORD = "private key"
 
@@ -78,15 +79,18 @@ DETECTOR_INFOS: tuple[RuleInfo, ...] = (
 
 
 def info_for_rule(rule: Rule) -> RuleInfo:
-    """The public description of a regex rule (built-in or from a configuration file)."""
+    """The public description of a regex rule (built-in or from a configuration file). A rule from
+    a configuration file can carry any text in its name and description, so both are escaped here,
+    once, by the single sanitiser: a report then shows an escape sequence instead of a control
+    character, and no renderer has to refuse the whole report because of one rule."""
     return RuleInfo(
         id=rule.id,
-        name=rule.name,
-        description=rule.description,
+        name=sanitize(rule.name),
+        description=sanitize(rule.description),
         detector=rule.detector,
         severity=rule.severity,
         confidence=rule.confidence,
-        keywords=rule.keywords,
+        keywords=tuple(sanitize(keyword) for keyword in rule.keywords),
     )
 
 

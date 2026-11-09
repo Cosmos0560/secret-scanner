@@ -971,3 +971,40 @@ phase report written. Tagging and pushing are yours.
      the reflog, unreachable objects, submodule contents and LFS objects are not scanned in v1; the
      deliberate refusals of worktree and submodule `.git` files, alternates and grafts (exit code 3,
      v0.10 item 1); and that the Windows planted-executable test needs `csc.exe`.
+- v0.13 (2026-11-09): Phase 5 interpretations and additions, **awaiting acceptance** (details in
+  docs/phase-reports.md; D11, D12 and the Phase 5 scope are otherwise built as written):
+  1. JSONL (D11): the finding object also carries `suppressed_by` (last field), so that a
+     suppressed finding listed with `--show-suppressed` can be told from a reported one; `timestamp`
+     is the time of the run on every line (a commit's time is `secret.commit_time`); `file_sha256`
+     is the SHA-256 of the full escaped path; the summary line's fields are the ones listed in
+     docs/siem-mapping.md (D11 says "counts and `complete`"); scan issues are counted in the
+     summary, not listed. The shape was derived from D11 and from mini-siem's parser, which was read
+     read-only; file-integrity-monitor's own `docs/siem-mapping.md` was not read, because CLAUDE.md
+     section 4 item 4 allows reading outside this folder only for mini-siem's parser source.
+  2. SARIF (D12): `driver.version` is written as well as `semanticVersion`; `informationUri` is
+     the repository page taken from this repository's `origin` remote; the artifact URI is built
+     from the exact path (`path_key`), not from the escaped display form; a suppression's
+     `justification` is a fixed sentence saying whether the baseline matched by fingerprint or by
+     path (a `Finding` does not carry the baseline's written reason); `run.properties` holds
+     `target`, `complete`, `truncated`, `historyComplete`, `rulesSha256` (D19's rules version),
+     `suppressedByFingerprint`, `suppressedByPath`, `stale` and `generatedAt`; every scan issue is a
+     `toolExecutionNotification` of level `warning`; `properties.commit` only on a history result.
+     Not validated against the official SARIF schema (no PyPI package ships it, checked on
+     2026-11-09; structural tests written from the specification) and not uploaded to GitHub code
+     scanning: both stay listed known gaps.
+  3. `rules` (D4): `rules [--format table|json]` lists the 13 regex rules of the rules file and the
+     three detectors (`private-key`, `entropy-base64`, `entropy-hex`) with id, name, detector,
+     severity, confidence, description and keywords, schema `secret-rules/1`; the detectors'
+     descriptions are code (`core/ruleinfo.py`), checked against the detectors' constants. D4 does
+     not cover validating a user rules file (D19's `extra_rules` are validated by the configuration
+     loader with the regex guard when a scan reads them), so `rules` takes no file.
+  4. `demo` (Phase 5): exit code 0 when it ran as designed, 3 without git (the history part is
+     skipped), 2 when a result it checks for is missing (`DemoError`). Ctrl-C ends any command with
+     exit code 130 and `interrupted` (outside D10's codes, the shell convention). The commit dates
+     of the throw-away repository are fixed, so its commit ids do not change from run to run.
+  5. New modules: `core/ruleinfo.py`, `render/jsonl.py`, `render/sarif.py`, `render/rules_out.py`,
+     `app/rules.py`, `app/demo.py`, `fs/sandbox.py`, `gitio/demo_git.py`; `core/sanitize.clip_display`;
+     `app/common.resolve_git_program` (the search `open_runner` already did, now also used by the
+     demo); `DemoError`; a custom rule's name and description are escaped by `info_for_rule`.
+     New test infrastructure: `tests/audit.py` (audit hooks), `tests/sarif_check.py`,
+     `tests/doc_samples.py`.

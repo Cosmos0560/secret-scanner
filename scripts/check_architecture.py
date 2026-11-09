@@ -143,7 +143,7 @@ SAME_LAYER_ALLOWED: Mapping[str, frozenset[str]] = {
         }
     ),
     "core.gitparse": frozenset({"core.errors", "core.sanitize"}),
-    "core.ruleinfo": frozenset({"core.models", "core.rules"}),
+    "core.ruleinfo": frozenset({"core.models", "core.rules", "core.sanitize"}),
     "services.loader": frozenset(),
     "services.config": frozenset({"services.loader"}),
     "services.git_scanner": frozenset({"services.fs_scanner"}),

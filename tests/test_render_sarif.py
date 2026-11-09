@@ -567,3 +567,43 @@ def test_configured_extra_rules_appear_in_the_rule_list(tmp_path: Path) -> None:
     assert isinstance(index, int)
     assert driver_rules(doc)[index]["id"] == "custom-demo"
     assert check_sarif(doc) == []
+
+
+def test_a_custom_rule_with_hostile_text_is_escaped_not_refused(tmp_path: Path) -> None:
+    """A configuration file can put any text in a rule's name and description. The report shows
+    escape sequences for it (the single sanitiser) and is still written."""
+    hostile_name = "Demo" + chr(0x1B) + "[31m" + chr(0x202E) + "evil"
+    hostile_description = "line one" + chr(10) + "line" + chr(0x200B) + "two" + chr(92)
+    rule = {
+        "id": "custom-demo",
+        "name": hostile_name,
+        "description": hostile_description,
+        "regex": "demo_(?P<secret>[A-Za-z0-9]{24})",
+        "keywords": ["demo_"],
+        "severity": "medium",
+        "confidence": "high",
+        "shown_chars": 0,
+        "min_secret_bits": 100,
+        "fake": [{"parts": ["demo", "_"]}, {"charset": "base62", "length": 24}],
+    }
+    config = tmp_path / "config.yaml"
+    config.write_bytes(dump_yaml({"version": 1, "extra_rules": [rule]}).encode("ascii"))
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    (tree / "a.txt").write_text("x = demo_" + "A1b2C3d4E5f6G7h8I9j0K1l2" + "\n", encoding="utf-8")
+    for output_format in (OutputFormat.SARIF, OutputFormat.JSON, OutputFormat.JSONL):
+        request = ScanRequest(path=str(tree), output_format=output_format, config=str(config))
+        outcome = run_scan(request, FakeClock())
+        assert outcome.exit_code is ExitCode.FINDINGS
+        for raw in (chr(0x1B), chr(0x202E), chr(0x200B)):
+            assert raw not in outcome.text
+    doc = json.loads(
+        run_scan(
+            ScanRequest(path=str(tree), output_format=OutputFormat.SARIF, config=str(config)),
+            FakeClock(),
+        ).text
+    )
+    custom = next(rule for rule in driver_rules(doc) if rule["id"] == "custom-demo")
+    assert custom["name"] == sanitize(hostile_name)
+    assert custom["fullDescription"] == {"text": sanitize(hostile_description)}
+    assert check_sarif(doc) == []
