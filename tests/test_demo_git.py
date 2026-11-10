@@ -22,6 +22,12 @@ from secret_scanner.gitio.demo_git import (
     identity_email,
 )
 from tests.gitrepo import git_binary
+from tests.helpers import (
+    BUILDER_TIMEOUT_SECONDS,
+    assert_killed_and_reaped,
+    local_traces,
+    stall_builder_commands,
+)
 
 ADDRESS = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 
@@ -191,11 +197,44 @@ def test_a_missing_program_is_a_git_error(tmp_path: Path) -> None:
         DemoRepo(missing, str(repo), str(tmp_path)).init()
 
 
-@pytest.mark.requires_git
 def test_a_command_that_does_not_finish_is_a_git_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(demo_git, "TIMEOUT_SECONDS", 0.001)
-    builder, _, _ = build_repo(tmp_path)
-    with pytest.raises(GitError, match="did not finish"):
+    # No race with a real git: the child cannot finish, so the timeout always fires.
+    started = stall_builder_commands(monkeypatch)
+    repo = tmp_path / "repo"
+    home = tmp_path / "repo-home"
+    repo.mkdir()
+    home.mkdir()
+    program = tmp_path / "bin" / ("git.exe" if sys.platform == "win32" else "git")
+    builder = DemoRepo(str(program), str(repo), str(home))
+    with pytest.raises(GitError) as raised:
         builder.init()
+    message = str(raised.value)
+    assert message == f"git init did not finish in {BUILDER_TIMEOUT_SECONDS} seconds"
+    assert local_traces(message, tmp_path, repo, home) == [], "no temporary path in the message"
+    assert raised.value.__cause__ is None
+    assert raised.value.__suppress_context__, "the command line (with its paths) is not chained"
+    assert len(started) == 1
+    assert_killed_and_reaped(started[0])
+
+
+@pytest.mark.parametrize("platform", ["win32", "linux"])
+def test_the_environment_of_either_platform_is_built_on_this_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str
+) -> None:
+    home = str(tmp_path / "home")
+    common = set(environment_for("/x/git", home, 0)) - {"SYSTEMROOT", "TEMP", "TMP"}
+    with monkeypatch.context() as patch:
+        patch.setattr(sys, "platform", platform)
+        patch.setenv("SYSTEMROOT", "X:\\Windows-here")
+        given = environment_for("/x/git", home, 0)
+        patch.delenv("SYSTEMROOT")
+        default = environment_for("/x/git", home, 0)
+    if platform == "win32":
+        assert set(given) == common | {"SYSTEMROOT", "TEMP", "TMP"}
+        assert given["SYSTEMROOT"] == "X:\\Windows-here"
+        assert default["SYSTEMROOT"] == "C:\\Windows"
+        assert given["TEMP"] == given["TMP"] == home, "git's temporary files stay in the sandbox"
+    else:
+        assert set(given) == set(default) == common

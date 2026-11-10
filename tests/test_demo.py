@@ -21,7 +21,7 @@ from secret_scanner.app.common import resolve_git_program
 from secret_scanner.app.demo import SHOWN_DIRECTORY, DemoOutcome, plan_demo, run_demo
 from secret_scanner.app.scan import run_scan
 from secret_scanner.cli import main as cli_main
-from secret_scanner.core.errors import DemoError, ExitCode
+from secret_scanner.core.errors import DemoError, ExitCode, GitError
 from secret_scanner.core.models import Detector
 from secret_scanner.core.rules import PRIVATE_KEY_ID
 from secret_scanner.fs.sandbox import PREFIX
@@ -29,11 +29,14 @@ from secret_scanner.gitio.demo_git import DemoRepo, environment_for
 from secret_scanner.services.loader import load_builtin_rules
 from tests.audit import Recording, recording
 from tests.helpers import (
+    BUILDER_TIMEOUT_SECONDS,
     PROJECT_ROOT,
     SHARED_TEMPORARY_DIRECTORIES,
     FakeClock,
+    assert_killed_and_reaped,
     local_traces,
     login_name,
+    stall_builder_commands,
 )
 
 NO_GIT = {"PATH": ""}
@@ -312,6 +315,24 @@ def test_an_interrupt_in_the_middle_of_the_history_part_removes_everything(
     monkeypatch.setattr(DemoRepo, "init", interrupt)
     with pytest.raises(KeyboardInterrupt):
         run_demo(FakeClock(), parent=str(parent))
+    assert os.listdir(parent) == []
+
+
+@pytest.mark.requires_git
+def test_a_builder_command_that_does_not_finish_is_killed_and_the_directory_is_removed(
+    parent: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The real demo up to the builder's first command, which is a child that never ends: no race
+    # with a real git. On Windows the directory can be removed only if the child (whose working
+    # directory is inside it) is gone, so this also proves the kill and the wait.
+    started = stall_builder_commands(monkeypatch)
+    with pytest.raises(GitError) as raised:
+        run_demo(FakeClock(), parent=str(parent))
+    message = str(raised.value)
+    assert message == f"git init did not finish in {BUILDER_TIMEOUT_SECONDS} seconds"
+    assert local_traces(message, parent) == [], "no temporary path in the message"
+    assert len(started) == 1
+    assert_killed_and_reaped(started[0])
     assert os.listdir(parent) == []
 
 

@@ -6,10 +6,14 @@ import getpass
 import itertools
 import os
 import re
+import subprocess
 import sys
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from secret_scanner.core.models import (
     Confidence,
@@ -48,6 +52,53 @@ class FakeClock:
     def advance(self, seconds: float) -> None:
         self._now += timedelta(seconds=seconds)
         self._monotonic += seconds
+
+
+# A child that never ends by itself: it waits on an event nobody sets, so only a kill ends it.
+NEVER_ENDS = "import threading; threading.Event().wait()"
+BUILDER_TIMEOUT_SECONDS = 0.05  # only how long the test waits: the child never ends before it
+
+
+def stall_builder_commands(monkeypatch: pytest.MonkeyPatch) -> list[subprocess.Popen[Any]]:
+    """Make every command of the demo's repository builder a child that never ends, and return the
+    list its process objects are added to.
+
+    A test of the builder's timeout must not race a real git against a small timeout (a `git init`
+    can finish in under a millisecond on a fast machine). Here the outcome does not depend on
+    speed: the child cannot finish, so the timeout always fires, however long the machine takes.
+    Everything else is the real thing (`subprocess.run`, its kill and its wait), with the builder's
+    own working directory, environment and pipes. A builder command is known by the commit identity
+    in its environment (PLAN.md D17); other children, such as the scanner's git, are left alone.
+
+    The child is the base interpreter, not the virtual environment's: on Windows that one is a
+    launcher which starts the interpreter as a child of its own."""
+    from secret_scanner.gitio import demo_git
+
+    interpreter = str(getattr(sys, "_base_executable", "") or sys.executable)
+    real = subprocess.Popen
+    started: list[subprocess.Popen[Any]] = []
+
+    def popen(args: Any, **kwargs: Any) -> subprocess.Popen[Any]:
+        if "GIT_AUTHOR_NAME" not in (kwargs.get("env") or {}):
+            return real(args, **kwargs)
+        kwargs["executable"] = interpreter
+        process = real([interpreter, "-I", "-c", NEVER_ENDS], **kwargs)
+        started.append(process)
+        return process
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    monkeypatch.setattr(demo_git, "TIMEOUT_SECONDS", BUILDER_TIMEOUT_SECONDS)
+    return started
+
+
+def assert_killed_and_reaped(process: subprocess.Popen[Any]) -> None:
+    """The child was ended by a kill and its exit status was collected: nothing is left behind."""
+    killed = 1 if sys.platform == "win32" else -9  # TerminateProcess(1) / ended by SIGKILL
+    assert process.returncode == killed
+    assert process.poll() == killed
+    for pipe in (process.stdout, process.stderr):
+        assert pipe is not None
+        assert pipe.closed
 
 
 def public_prefix_length(rule: Rule) -> int:
