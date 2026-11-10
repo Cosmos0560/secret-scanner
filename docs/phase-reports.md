@@ -623,6 +623,14 @@ CI run 7 on `13b772a` is green on all six jobs.
    `.venv`'s own `python -m venv` (same Python 3.13.14).
 10. One command that joined `gate.py` with another command through a pipe was blocked by the Claude
     Code hook, as designed; nothing ran.
+11. **The Linux run on the commit of this report found a test that was wrong on Linux only.** The
+    new check "no document names the system temporary directory" failed in WSL for
+    `docs/performance.md`, which says that the Linux measurement wrote its files to `/tmp`: on Linux
+    `/tmp` is the system temporary directory, on Windows it is a path below the user's profile. The
+    shared `/tmp` identifies no machine and no account, so the check now skips it (`/tmp` and
+    `/var/tmp`) and keeps flagging a per-user temporary directory; the document was right and was
+    not changed. This is the second time in this project that only the Linux run showed a fault
+    (Phase 5, item 2). It would have failed CI on Ubuntu.
 
 ### Review of the security-critical modules
 
@@ -708,6 +716,11 @@ build 1.6.1 (hatchling 1.33.0), pip-audit 2.10.1, bandit 1.9.4, Python 3.13.14.
   82 s the owner accepted; in two of those mypy took twice its usual time, which points at the
   machine being busy, but the suite also grew by 48 default tests. Nothing was moved to `slow` for
   it, as decided; the tests of this phase that take more than a second are marked `slow`.
+- After this report was first committed (`9fbc97b`), the full gate ran on that commit: Windows
+  passed (2561 passed, 23 skipped, 275.54 s pytest, 292.3 s in total, 99.71%); WSL failed 2 of 2557
+  tests (item 11 above). The fix is in the commit that follows `9fbc97b`, and both full gates were
+  run again on it; a report cannot hold the result of a run on its own commit, so those two results
+  are in the session summary and are the ones to compare with CI.
 - The benchmark numbers are in `docs/performance.md` and nowhere else.
 
 `git log --oneline -15` before this report was committed:

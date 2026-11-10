@@ -73,6 +73,11 @@ ABSOLUTE_PATH_PATTERNS = (
 )
 
 
+# The temporary directory every POSIX system has: naming it says nothing about a machine or an
+# account (a document may well say that files were written to it). A per-user one does.
+SHARED_TEMPORARY_DIRECTORIES = frozenset({"/tmp", "/var/tmp"})
+
+
 def login_name() -> str | None:
     """The account name of the person running the suite, or `None` when it cannot be read."""
     try:
@@ -93,14 +98,17 @@ def local_traces(
     text: str, *directories: str | Path, absolute_paths: bool = True, names: tuple[str, ...] = ()
 ) -> list[str]:
     """What in `text` tells a reader where, or under which account, it was produced: an absolute
-    path, one of `directories` (the system temporary directory is always one), one of `names`,
-    or the account name as a part of a path. Returns one description per trace; empty is clean.
+    path, one of `directories` (the system temporary directory is always one, unless it is the
+    shared `/tmp`), one of `names`, or the account's profile directory. Returns one description
+    per trace; empty is clean.
     The descriptions never repeat the text itself."""
     found = []
     if absolute_paths:
         found += [what for what, pattern in ABSOLUTE_PATH_PATTERNS if pattern.search(text)]
     folded = text.casefold()
     for number, directory in enumerate((tempfile.gettempdir(), *directories)):
+        if number == 0 and os.path.realpath(directory) in SHARED_TEMPORARY_DIRECTORIES:
+            continue
         if any(spelling.casefold() in folded for spelling in path_spellings(directory)):
             found.append("the system temporary directory" if number == 0 else f"directory {number}")
     found += [f"name {number}" for number, name in enumerate(names, 1) if name.casefold() in folded]

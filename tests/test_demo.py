@@ -28,7 +28,13 @@ from secret_scanner.fs.sandbox import PREFIX
 from secret_scanner.gitio.demo_git import DemoRepo, environment_for
 from secret_scanner.services.loader import load_builtin_rules
 from tests.audit import Recording, recording
-from tests.helpers import PROJECT_ROOT, FakeClock, local_traces, login_name
+from tests.helpers import (
+    PROJECT_ROOT,
+    SHARED_TEMPORARY_DIRECTORIES,
+    FakeClock,
+    local_traces,
+    login_name,
+)
 
 NO_GIT = {"PATH": ""}
 GIT_SUBCOMMANDS = {"init", "add", "rm", "commit", "rev-parse"}
@@ -187,7 +193,11 @@ def test_the_check_for_local_traces_finds_each_kind(tmp_path: Path) -> None:
     assert local_traces("/srv/project", absolute_paths=False) == []
     assert "directory 1" in local_traces(f"in {tmp_path}", tmp_path)
     assert "directory 1" in local_traces(f"in {tmp_path.as_posix().upper()}", tmp_path)
-    assert "the system temporary directory" in local_traces(f"{tempfile.gettempdir()}/x")
+    # a per-user temporary directory identifies the account; the shared /tmp of POSIX does not
+    named = "the system temporary directory" in local_traces(f"{tempfile.gettempdir()}/x")
+    assert named is (os.path.realpath(tempfile.gettempdir()) not in SHARED_TEMPORARY_DIRECTORIES)
+    assert local_traces("written to /tmp, a tmpfs", absolute_paths=False) == []
+    assert local_traces("written to /tmp/work") == ["a POSIX absolute path"]
     assert local_traces("made by Some-Account", names=("some-account",)) == ["name 1"]
     user = login_name()
     if user is not None:
