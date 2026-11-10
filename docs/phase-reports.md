@@ -5,15 +5,11 @@ CLAUDE.md section 2, step 5. The last entry is the one a new session reads first
 
 ## In progress
 
-Phase 6 (hardening, measurement, docs, release) was started on 2026-11-10. Owner decisions at the
-start of the session (PLAN.md v0.14, accepted 2026-11-10; CI run 7 on `13b772a` is green on all six
-jobs):
-
-1. The demo shows the fixed label `<temporary directory>` and never the real path of its temporary
-   directory (commit `0e64191`).
-2. The default gate at 72 s to 82 s on this machine is accepted: above the 60 s target of CLAUDE.md
-   section 7, below its 90 s limit. No Phase 6 time goes into gate speed.
-3. The classifier is `Development Status :: 4 - Beta`, pinned by a test.
+Nothing. Phase 6 (hardening, measurement, docs, release) is done and reported at the end of this
+file. All six phases are built. What is left is the owner's: push, check the Actions run, tag
+`v1.0.0`, publish the release, make the repository public. Open for the owner (PLAN.md v0.15,
+awaiting acceptance): the Phase 6 interpretations, and the decision about `MAX_RUN_SECONDS` that
+the measurements raised (docs/performance.md). The commits after `13b772a` are local.
 
 ## Phase 1 - Foundation, gate, hook, CI, pure core (2026-10-12)
 
@@ -554,4 +550,190 @@ Tests added: 218 (suite 2531 collected, 84 slow): JSONL 18, SARIF 59 and doc dri
 Real coverage: 99.72% (branch, full gate, Windows, commit fa248b5); 99.77% in the WSL Linux full gate (git 2.53.0, Python 3.14.4); floor 85
 Known gaps: SARIF is not validated against the official schema (no PyPI package ships it; structural tests only) and was not uploaded to GitHub code scanning; no mini-siem detection rule written, and mini-siem 1.0.0 cannot search by secret.* attribute; default gate 72.7 s to 82.1 s on this machine (above CLAUDE.md's 60 s, below its 90 s); Phase 5 code has not run on CI (Python 3.11 and 3.12 untested locally: local 3.13, WSL 3.14); the audit-hook guard fails closed on a system without /proc/self/fd (macOS, not in the CI matrix); rules takes no user rules file (D4 does not cover one); file-integrity-monitor's siem-mapping.md was not read (CLAUDE.md section 4 allows only mini-siem's parser source); the demo header shows its random temporary path; from Phase 4, still open for the README: TOCTOU between resolving git and starting it, commit and tag messages, reflog, unreachable objects, submodule contents and LFS not scanned, the deliberate exit-3 refusals, csc.exe for the Windows planted-executable test
 Deviations from PLAN.md: v0.13 accepted by the owner 2026-11-10 (JSONL suppressed_by field and summary fields; SARIF driver.version, informationUri from the origin remote, URI from the exact path, generic suppression justification, run properties; rules lists 13 rules and 3 detectors; demo exit codes and Ctrl-C 130; new modules); the two unpushed commits 7b112f2 and 2fad516 were redone from 0631ca6 to remove a hex value the tool's own history scan flagged (no allowlist) (also accepted 2026-11-10)
+```
+
+## Phase 6 - Hardening, measurement, docs, release (2026-11-10)
+
+### Owner decisions at the start of the session (PLAN.md v0.14, accepted 2026-11-10)
+
+CI run 7 on `13b772a` is green on all six jobs.
+
+1. The demo never prints the real path of its temporary directory; it shows the fixed label
+   `<temporary directory>` (commit `0e64191`).
+2. The default gate at 72 s to 82 s is accepted (above the 60 s target of CLAUDE.md section 7, below
+   its 90 s limit). No time of this phase went into gate speed. See "Measured" for what the gate
+   took in this session.
+3. `pyproject.toml` classifier `Development Status :: 4 - Beta`, pinned by a test (commit `6a0eaeb`).
+
+### Slices and commits
+
+| Commit | What |
+|---|---|
+| `0e64191` | step 0a: the demo shows `<temporary directory>` in its introduction and in both report headers (`run_scan` and `run_scan_git` take `shown_as`, used by the demo only); `tests/helpers.local_traces`; four tests |
+| `3ab13d8` | step 0b: PLAN.md v0.14 and the accepted gate time |
+| `6a0eaeb` | step 0c: the Beta classifier and `tests/test_release_metadata.py` |
+| `ce06835` | version 1.0.0 from its single source (`src/secret_scanner/__init__.py`), CHANGELOG `1.0.0 - 2026-11-10`, tests that pyproject, the installed metadata, `--version` and the changelog agree; the regenerated examples in the docs show 1.0.0 |
+| `9c9ea00` | `scripts/bench.py` and `docs/performance.md`; README; `docs/threat-model.md` finished (F-1 kept); `docs/rules.md` (generated table); SECURITY.md; CONTRIBUTING.md; drift tests for all of them; the two invariant 10 tests; the local-path hygiene test; the fix of the command in `docs/siem-mapping.md`; PLAN.md v0.15 |
+| `f259e89` | the Linux (WSL 2) measurement in `docs/performance.md` |
+
+### What the phase found
+
+1. **A documented command did not work.** `docs/siem-mapping.md` showed
+   `secret-scanner scan . --format jsonl --host-label build-01 --output events.jsonl`. The tool
+   refuses it with exit code 2: the output would be inside the scanned tree. `--output
+   ../events.jsonl` is refused too (no path given to the tool may contain `..`). The document now
+   scans a directory by name from its parent, says why, and
+   `test_the_documented_command_runs_and_writes_the_documented_lines` runs the command as written.
+   The README states the rule in its options section, and its CI example writes the report to the
+   runner's temporary directory.
+2. **Invariant 10 had no named test.** CLAUDE.md section 7 asks for at least one named test per
+   invariant of section 5; none proved that configuration, rules and baselines are never
+   discovered. Two were added (`scan`, and `scan-git` with the files committed): files under 14
+   plausible names plus a `pyproject.toml` section, in the scanned tree, the current directory and
+   the home directory, that ask to switch every rule off, exclude everything and suppress the
+   finding. The result is the one of a run without them. The product code needed no change.
+3. **The first scan of freshly written files is slow on this Windows machine, and the default time
+   budget cannot be raised.** `scripts/bench.py` measured 7 ms per file (1,000 files) and 20 ms per
+   file (10,000 files) for a first scan, against 0.4 ms per file for a repeat scan. A first scan of
+   100,000 new files ran into `MAX_RUN_SECONDS` (600) and ended incomplete, and so did at least two
+   of its three repeat scans. On Linux (WSL 2, memory file system) the same tree took 30 seconds.
+   Real-time antivirus protection is on on this machine; no run was made with it off, so the cause
+   is not proven. Because a configuration file can only lower a limit (PLAN.md v0.3), such a tree
+   cannot be scanned completely in one run. No default was changed: this is an open decision for the
+   owner (PLAN.md v0.15 item 2), stated in the README Limitations and in `docs/performance.md`.
+4. **The measured throughput is modest**: 4.2 to 4.7 MiB of text per second on Windows (11.3 on
+   Linux for small files), one core, pure Python. 600 s x 4.2 MiB/s = 2,520 MiB, so on this machine
+   the time budget is reached before the default `MAX_TOTAL_BYTES` of 4 GiB.
+5. **The default thresholds of the entropy detector are quiet.** On this repository and on the
+   packages installed in the project's virtual environment (25.2 MiB together) it reported nothing
+   at the default confidence and at least 1,200 strings at low confidence.
+6. **One entropy fake is not detected.** `fake_entropy_token("bench-b")` scores below the 4.5 bits
+   per character threshold, so the detector does not report it. That is the documented false
+   negative of a fixed threshold (docs/rules.md); the test uses another seed.
+7. **The mini-siem ingest was not repeated for 1.0.0.** CLAUDE.md section 4 allows only a read of
+   mini-siem's parser source in this phase. The history example and the stored event in
+   `docs/siem-mapping.md` therefore keep the `tool_version` `0.1.0` they were recorded with on
+   2026-11-09, the document says so, and the drift test pins exactly that one value as recorded.
+8. **The account name of this machine is not the name of its profile directory.** The hygiene test
+   therefore takes the names from the login name and from `Users/<name>` or `home/<name>` in the
+   temporary directory, the interpreter and the checkout, and looks for them only below such a
+   parent (the word `runner` in `gitio/runner.py` is not the CI account `runner`).
+9. The base Python of the project's virtual environment is a Microsoft Store installation, whose
+   executable cannot be started by path. The release-check environments were therefore created with
+   `.venv`'s own `python -m venv` (same Python 3.13.14).
+10. One command that joined `gate.py` with another command through a pipe was blocked by the Claude
+    Code hook, as designed; nothing ran.
+
+### Review of the security-critical modules
+
+Done as an audit of every invariant of CLAUDE.md section 5 against the tests that prove it (the
+result is the control list of `docs/threat-model.md`, each control with its tests, checked by a
+drift test), plus a re-read of `core/redact.py`, of the process start and stop code of
+`gitio/runner.py`, and a check of every git setting the threat model names against the runner's
+source. Finding: item 2 above (a missing test, no defect). Not re-read line by line in this phase:
+`fs/walk.py`, `fs/safe_files.py`, `core/sanitize.py`, `core/regex_guard.py`; they are covered by
+their tests (99.71% branch coverage) and by `bandit`, below.
+
+### Release checks (CLAUDE.md section 11)
+
+In a temporary directory outside the repository, deleted afterwards (no build output is in the
+repository). Commit checked: `f259e89`, a local `git clone` of it with a clean status. Tools:
+build 1.6.1 (hatchling 1.33.0), pip-audit 2.10.1, bandit 1.9.4, Python 3.13.14.
+
+1. `python -m build`: `Successfully built secret_scanner-1.0.0.tar.gz and
+   secret_scanner-1.0.0-py3-none-any.whl`. Wheel: 65 files, the rules file and `py.typed`
+   included, no tests, no byte code. Metadata: `Name: secret-scanner`, `Version: 1.0.0`,
+   `Author: Otabek Yakubov`, `License-Expression: MIT`, `Development Status :: 4 - Beta`,
+   `Requires-Python: >=3.11`, `Requires-Dist: pyyaml>=6.0.1`; no address in it. The sdist holds
+   `src`, `README.md`, `LICENSE` and `pyproject.toml` (not `docs/`, so the README's links to the
+   documents work on the repository page, not inside the sdist).
+2. The wheel installed into a clean virtual environment (`pip list`: pip 26.1.2, PyYAML 6.0.3,
+   secret-scanner 1.0.0). There:
+   - `secret-scanner --version` and `python -m secret_scanner --version`: `secret-scanner 1.0.0`;
+   - `secret-scanner rules`: exit 0, 39 lines, `16 built-in rules`; `rules --format json`: exit 0;
+   - `secret-scanner demo`: exit 0, 67 lines, nothing on standard error, both headers show
+     `<temporary directory>`, `3 reported, 1 suppressed` and `1 reported, 0 suppressed`;
+   - a driver script planted 18 runtime-generated fakes (one per rule, a private key, an entropy
+     token, and three in the history of a throw-away repository that are removed in its second
+     commit) and ran the installed console script: `scan` and `scan-git` in `table`, `json`,
+     `jsonl` and `sarif`, each to standard output and to `--output`: exit code 1 every time;
+     `scan` found 15 findings from 15 rules, `scan-git` the 3 removed secrets with their commit;
+     the baseline round trip gave exit 1 then 0 for both; three error paths gave exit 2, 3 and 2.
+     Every output, written file and baseline was checked against every fake with the leak check of
+     the test suite: **414 checks, 0 leaks**. The positive control (the planted file itself)
+     is reported as a leak.
+3. `pip-audit`: for the runtime dependency alone (`PyYAML==6.0.3`): `No known vulnerabilities
+   found`. For the whole clean environment it reports `pip 26.1.2 PYSEC-2026-3721` (fixed in 26.2):
+   that is the pip that `python -m venv` puts into every new environment on this machine, not a
+   dependency of this project, and nothing the wheel ships. `secret-scanner` itself is skipped
+   ("not found on PyPI").
+4. `bandit -r src`: 7,300 lines, **0 high, 0 medium, 9 low, no `nosec` and no suppression**. The
+   nine, each explained instead of suppressed:
+   - B105 "possible hardcoded password" (4): two character-class strings of the entropy detector
+     (`core/detect/entropy.py`, lines 37 and 38) and the group name and a refusal-reason name of
+     the regex guard (`core/regex_guard.py`, lines 40 and 87). They are names and alphabets, not
+     credentials.
+   - B404 and B603 (5): the `subprocess` import and calls of `gitio/runner.py` (lines 30, 196, 224)
+     and `gitio/demo_git.py` (lines 19, 87). Starting git is what these two modules are for:
+     argument lists, `shell=False`, an absolute program path, a from-scratch environment
+     (docs/git-hardening.md); the architecture check allows `subprocess` nowhere else.
+
+### Final self-checks
+
+- `secret-scanner scan-git .` on this repository's full history (after `f259e89`): `No findings.`,
+  `60 commits, 355 blobs scanned`, `history complete: yes`, `complete: yes`, exit code 0.
+  `secret-scanner scan . --gitignore`: `No findings.`, 161 files scanned, exit code 0.
+- Tracked files (and untracked ones that are not ignored), all by tests of the gate: no email
+  address, no bidirectional, zero-width or control character, no key or secret file, no string a
+  built-in rule or the private key detector matches, and (new) no account profile path, system
+  temporary directory or absolute path of the checkout.
+- One thing the last check does not cover, found by a search for absolute paths: the WSL spelling
+  of the project folder (the Windows drive mount, then the folder path, no account name in it)
+  is written in CLAUDE.md line 101, in the Linux-check command, and in
+  `tests/test_hook_guard_gate.py` line 80, which quotes that command to test the hook. It was left
+  as it is, because CLAUDE.md is the owner's rule file and the command is used verbatim. Every
+  other absolute path in a tracked file is an invented example in a test.
+
+### Measured (this machine: Windows 11, Python 3.13.14, git 2.54.0.windows.1, 2026-11-10)
+
+- Full gate, Windows, on the tree committed as `9c9ea00`: 2561 passed, 23 skipped (POSIX-only),
+  225.95 s pytest, 235.4 s in total, **99.71%** branch coverage. Missed: POSIX branches of
+  `fs/safe_files.py`, `fs/sandbox.py`, `gitio/demo_git.py`, the runner and `scripts/bench.py`.
+- Full gate, WSL Ubuntu (git 2.53.0, Python 3.14.4, outside the CI matrix), on the committed
+  `9c9ea00`: 2557 passed, 27 skipped (Windows-only), 24.18 s pytest, 38.5 s in total, **99.74%**.
+  The editable install in WSL was repeated first, because the installed metadata still said 0.1.0.
+- Default gate, Windows, the five runs of this session in order: 81.1 s, 90.4 s, 76.1 s, 97.4 s and
+  95.5 s in total (pytest alone 73.2 s to 86.3 s; 2475 passed, 20 skipped, 89 deselected at the
+  end; 99.22%). Three of the five are above the 90 s of CLAUDE.md section 7 and above the 72 s to
+  82 s the owner accepted; in two of those mypy took twice its usual time, which points at the
+  machine being busy, but the suite also grew by 48 default tests. Nothing was moved to `slow` for
+  it, as decided; the tests of this phase that take more than a second are marked `slow`.
+- The benchmark numbers are in `docs/performance.md` and nowhere else.
+
+`git log --oneline -15` before this report was committed:
+
+```
+f259e89 docs: add the Linux (WSL 2) measurement to docs/performance.md
+9c9ea00 docs: write the 1.0.0 README, threat model, rules and performance documents with scripts/bench.py, SECURITY.md and CONTRIBUTING.md; add drift tests, the invariant 10 tests and the local-path hygiene test (PLAN.md v0.15)
+ce06835 release: set version 1.0.0 from its single source, with the changelog entry and tests that metadata, command line and changelog agree
+6a0eaeb build: declare Development Status 4 - Beta and pin it with a test
+3ab13d8 docs: record the owner's Phase 6 decisions and the accepted default gate time (PLAN.md v0.14)
+0e64191 fix: show a fixed label instead of the demo's temporary path, with tests that the output names no path, account or temporary directory
+13b772a docs: record the owner's acceptance of PLAN.md v0.13 and of the rewrite of two unpushed commits
+eae0f05 docs: add the Phase 5 report with the real mini-siem check and the measured gate numbers
+fa248b5 test: resolve directory-descriptor paths in the audit helper and accept git's own posix_spawn (found by the Linux run)
+5ae388b fix: escape the name and description of a custom rule in rule listings and SARIF; record the Phase 5 interpretations (PLAN.md v0.13)
+2710930 test: add the cross-format leak matrix, hostile names per format and docs/siem-mapping.md with a real mini-siem ingest
+0631ca6 feat: add the demo command with a sandboxed temporary tree, a throw-away repository and audit-hook guard tests
+cda8a74 feat: add the SARIF 2.1.0 output format with structural tests, docs/sarif.md and drift tests
+9fe0fea feat: add the rules command (table and JSON, secret-rules/1) with drift tests against the rules file
+8be925c feat: add the JSONL output format (secret-event/1) shaped for mini-siem's generic JSON parser
+```
+
+```
+Built: version 1.0.0 from one source (pyproject metadata, --version, installed metadata and CHANGELOG agree, tested); README with real pasted output (demo, scan, baseline round trip), every command and option, exit codes, limits, "How findings are shown", "What the tool reads and writes", an unverified CI example with SARIF upload, the mini-siem section, a 25-row claim-to-evidence table and the Limitations; docs/threat-model.md finished (assets, trust, attackers, the 11 invariants each with its tests, residual risks, F-1 kept); docs/rules.md (generated table); docs/performance.md from scripts/bench.py (trees of 1,000 to 100,000 files, a larger-file tree, histories of 1,000 and 5,000 commits, the entropy corpus; Windows and Linux in WSL 2); SECURITY.md; CONTRIBUTING.md; the demo shows a fixed label instead of its temporary path; Beta classifier; release checks passed in a temporary environment outside the repository
+Tests added: 53 (suite 2584 collected on Windows, 89 slow): README 15 (examples are real output, options, exit codes, limits, constants, claims name existing evidence, required limitations), bench 16 (self-check, counts only, no leak, the document's commands and tables), release metadata 8 (one version everywhere, classifier), rules document 6, demo 4 (no path, account or temporary directory in the output), invariant 10 two (scan and scan-git), the documented mini-siem command 1, the local-path hygiene test 1
+Real coverage: 99.71% (branch, full gate, Windows, tree of commit 9c9ea00); 99.74% in the WSL Linux full gate (git 2.53.0, Python 3.14.4); floor 85
+Known gaps: a tree that needs more than MAX_RUN_SECONDS (600 s) cannot be scanned completely in one run, because a configuration file can only lower a limit, and on this Windows machine a first scan of 100,000 freshly written files does not finish in that time (owner decision open, PLAN.md v0.15 item 2); the cause of the slow first scan was not proven (no run with antivirus protection off); default gate 76.1 s to 97.4 s in this session, three of five runs above CLAUDE.md's 90 s; SARIF not validated against the official schema and not uploaded to GitHub code scanning, the README's CI workflow never run, the install-from-tag command not tried (no GitHub access); mini-siem ingest not repeated for 1.0.0 (two recorded values keep tool_version 0.1.0, stated), mini-siem cannot search by secret.* attributes and no detection rule ships; pip-audit flags the pip of the virtual environment (PYSEC-2026-3721, not a dependency of the project); bandit reports 9 low findings, explained and not suppressed; the Phase 6 code has not run on CI (Python 3.11 and 3.12 untested locally: local 3.13, WSL 3.14), macOS untested; the WSL path of the project folder is written in CLAUDE.md line 101 and in the hook test that quotes it; walk.py, safe_files.py, sanitize.py and regex_guard.py were not re-read line by line in this phase; memory near the 8 MiB file limit and anything near the hard ceilings was not measured; the 100,000-file rate on Linux is half the 10,000-file rate and was not investigated; scripts/bench.py does not mark a repeat scan that was incomplete (the document explains the one affected row); the release-check driver is not in the repository
+Deviations from PLAN.md: v0.15, awaiting acceptance (bench reports first and repeat scans apart and adds a larger-file tree; no D18 default changed although MAX_RUN_SECONDS is put in question; docs/rules.md generated by a test helper, not by a command; the mini-siem ingest not repeated; the release-check driver kept outside the repository); PLAN.md Phase 6 asked for a "final review of the security-critical modules": done as an invariant-to-test audit plus a partial re-read, not a full line-by-line review; the Limitations of PLAN.md Phase 6 and of the owner's list are all in the README (a test pins them)
 ```
