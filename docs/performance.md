@@ -195,10 +195,12 @@ D18 says that a default changes only with a measured reason. Checked against the
 **No default was changed.** The one limit the measurements put in question is `MAX_RUN_SECONDS`:
 a configuration file can lower a limit but not raise it, so a tree that needs more than 600
 seconds cannot be scanned completely in one run. On Windows with real-time protection that was a
-first scan of 100,000 new files; on Linux the same tree took 30 seconds. Until that is decided
-(a higher default, or letting a configuration file raise a limit up to its hard ceiling of 3,600
-seconds), the ways around it are to scan the tree in parts, or to scan again: a second scan of the
-same files is fast.
+first scan of 100,000 new files; on Linux the same tree took 30 seconds. Decided for 1.0.0
+(2026-11-11): the default stays 600 seconds and a configuration file still only lowers limits.
+The ways around it are to scan the tree in parts, or to scan again: a second scan of the same
+files is fast. A possible later addition, not built: a command-line option for the person running
+the tool (never a setting in a repository's configuration) that raises the time budget up to its
+hard ceiling of 3,600 seconds.
 
 ## What these numbers do not say
 

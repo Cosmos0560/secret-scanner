@@ -7,9 +7,10 @@ CLAUDE.md section 2, step 5. The last entry is the one a new session reads first
 
 Nothing. Phase 6 (hardening, measurement, docs, release) is done and reported at the end of this
 file. All six phases are built. What is left is the owner's: push, check the Actions run, tag
-`v1.0.0`, publish the release, make the repository public. Open for the owner (PLAN.md v0.15,
-awaiting acceptance): the Phase 6 interpretations, and the decision about `MAX_RUN_SECONDS` that
-the measurements raised (docs/performance.md). The commits after `13b772a` are local.
+`v1.0.0`, publish the release, make the repository public. PLAN.md v0.15 is accepted and the
+`MAX_RUN_SECONDS` question is decided (PLAN.md v0.16, 2026-11-11). CI run 8 on `6f397c4` failed one
+test in one job; the fix is in the addendum at the end of the Phase 6 entry. The commits after
+`6f397c4` are local.
 
 ## Phase 1 - Foundation, gate, hook, CI, pure core (2026-10-12)
 
@@ -722,6 +723,87 @@ build 1.6.1 (hatchling 1.33.0), pip-audit 2.10.1, bandit 1.9.4, Python 3.13.14.
   run again on it; a report cannot hold the result of a run on its own commit, so those two results
   are in the session summary and are the ones to compare with CI.
 - The benchmark numbers are in `docs/performance.md` and nowhere else.
+
+### Addendum: CI run 8 and the owner's decisions (2026-11-11, PLAN.md v0.16)
+
+CI run 8 on `6f397c4`: five of six jobs green. The job on ubuntu-24.04 with Python 3.13 failed one
+test, `tests/test_demo_git.py::test_a_command_that_does_not_finish_is_a_git_error`, with
+`DID NOT RAISE GitError` (2556 passed, 27 skipped).
+
+**Root cause: a race in the test, not a fault of the product.**
+
+- The test set `demo_git.TIMEOUT_SECONDS` to 0.001 and expected a real `git init` to take longer.
+- `DemoRepo._run` passes the timeout to `subprocess.run`, which enforces it while the child runs,
+  kills the child when it passes and waits for it. There is no path that checks only after the
+  process has ended. `gitio/demo_git.py` is unchanged.
+- Measured with the same command line and `timeout=0.001`: in WSL (Python 3.14.4, git 2.53.0)
+  1994 of 2000 runs raised `TimeoutExpired` and 6 finished first (an untimed `git init` there:
+  1.66 ms at least, 1.88 ms median over 50 runs). On Windows 300 of 300 raised (51 ms at least,
+  61 ms median), which is why the race never showed on the development machine.
+- The lines the failed job did not reach: 101 is the `raise GitError(... did not finish ...)` of
+  the timeout, missed because the timeout did not fire. 64 to 66 are the Windows-only part of
+  `environment_for` (`SYSTEMROOT`, `TEMP`, `TMP`), which no Linux run reached before; they have
+  nothing to do with the failure.
+
+**The fix (commit `e8e2ff6`, tests only).**
+
+- `tests/helpers.py::stall_builder_commands` makes a builder command a child that never ends (the
+  base Python interpreter waiting on an event nobody sets). The timeout then always fires, however
+  fast or slow the machine is; `subprocess.run`, its kill and its wait are the real ones, with the
+  builder's own working directory, environment and pipes.
+- `test_a_command_that_does_not_finish_is_a_git_error` (no longer needs git) asserts the exact
+  message, that it holds no temporary path, that the command line is not chained to the error, and
+  that the child was killed and its exit status collected (`assert_killed_and_reaped`).
+- New: `tests/test_demo.py::test_a_builder_command_that_does_not_finish_is_killed_and_the_directory_is_removed`
+  runs the real demo up to the builder's first command and asserts the same, and that the
+  temporary directory is gone. On Windows the directory can be removed only when the child is.
+- New: `test_the_environment_of_either_platform_is_built_on_this_one` (two cases) builds the
+  Windows and the POSIX environment on either system, so lines 64 to 66 are covered on Linux and
+  the branch around them on Windows.
+- One assertion was dropped while writing the test: the stalled Python child, started with the
+  builder's small environment, creates a directory with a literal percent-sign name in its working
+  directory on Windows. That is the stand-in child, not git; the demo test proves the removal.
+
+**Audit of the same class** (a small timeout or limit against a real process or the real clock):
+
+- `tests/test_demo_git.py`, the 1 ms timeout: the only racing case. Fixed.
+- Upper bounds on real processes that are expected to end (60 s to 300 s): `tests/conftest.py`,
+  `tests/gitrepo.py`, `tests/test_demo.py`, `tests/test_git_hostile.py`,
+  `tests/test_hook_guard_gate.py`, `tests/test_hook_launcher.py`,
+  `tests/test_git_program_resolution.py`, `tests/test_sandbox.py`, `tests/test_git_runner.py`
+  (`process.wait(timeout=30)`). They fail only if a process hangs. Left.
+- Bounds on threads of this process (5 s `get`, `join` and `put`; `release.wait(5.0)` with a 0.2 s
+  timer, whose result does not depend on which fires first): `tests/test_git_runner.py`,
+  `tests/test_git_runner_edges.py`. Left.
+- `tests/test_git_runner_edges.py::test_a_slow_consumer_blocks_the_pump_instead_of_growing_memory`
+  polls up to 2 s (200 times 10 ms) for a thread to fill a small queue and then asserts that it is
+  full. It can fail only if that thread does not run for 2 s. Left, and listed as a known gap.
+- `tests/test_git_hostile.py`, the listener's 0.2 s accept timeout: the assertion is that nothing
+  connected, which no timing can turn into a failure. Left.
+- `tests/test_regex_tripwire.py`: the documented wall-clock exception of PLAN.md D3. Left.
+- Runner and scanner deadlines (`TickClock`, `FakeClock`, `FakeProcess`): no real clock. Left.
+
+**Stability.** The four changed test cases, one pytest process per run, 200 runs in a plain loop on
+`e8e2ff6`: Windows (Python 3.13.14) 200 passed, 0 failed; WSL (Python 3.14.4) 200 passed, 0 failed.
+
+**Gates on `e8e2ff6`.** Default gate, Windows: 2478 passed, 20 skipped, 89 deselected, 98.03 s
+pytest, 111.4 s in total, 99.23%; `gitio/demo_git.py` fully covered. That total is above the 76 s
+to 97 s accepted in v0.16. Full gate, WSL: 2560 passed, 27 skipped, 44.06 s pytest, 60.8 s in total,
+99.79%; `gitio/demo_git.py` fully covered. The full gates on the commit that holds this addendum
+are in the session summary (a report cannot hold the result of a run on its own commit).
+
+**Owner decisions (PLAN.md v0.16, accepted 2026-11-11).** v0.15 is accepted as written.
+`MAX_RUN_SECONDS` stays 600 for 1.0.0 and a configuration file still only lowers limits; the README
+Limitations now say plainly that a tree needing more than 600 seconds cannot be scanned completely
+in one run (two phrases pinned in `tests/test_readme.py`), and docs/performance.md records the
+decision. A possible 1.1 item, not built: an operator-only command-line option up to the 3,600 s
+ceiling. The WSL path in CLAUDE.md line 101 and in the hook test is accepted. The owner checked the
+commit metadata (every address is a GitHub no-reply address). A default gate of 76 s to 97 s is
+accepted for 1.0.0. These close four of the known gaps in the report below: the open
+`MAX_RUN_SECONDS` decision, the v0.15 acceptance, the WSL path, and the gate time up to 97 s.
+
+Known gaps added by this addendum: the fix has not run on CI; one default gate run took 111.4 s,
+above the accepted range; the 2 s poll in `tests/test_git_runner_edges.py` named above.
 
 `git log --oneline -15` before this report was committed:
 

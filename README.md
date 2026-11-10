@@ -588,10 +588,16 @@ or document does not exist.
 
 - Tested on Windows 11 and Linux (CI: Windows and Ubuntu, Python 3.11 to 3.13). macOS is untested.
 - Reading a file can update its access time on file systems that record it. Nothing else changes.
+- A tree that needs more than the default time budget of 600 seconds cannot be scanned completely
+  in one run. The run stops at the budget, reports what it found so far and ends as incomplete
+  (exit code 4). A configuration file can only lower a limit, never raise it, and version 1.0.0
+  has no option that raises the time budget. Scan such a tree in parts, one sub-directory per
+  run.
 - The first scan of files that were just written can be much slower than a repeat scan, because
   the operating system (and real-time antivirus protection, where it is on) inspects new files
-  when they are first opened. With the default time budget of 600 seconds a very large, freshly
-  written tree can end as an incomplete run; see [docs/performance.md](docs/performance.md).
+  when they are first opened. This is where the time budget is reached first: on the development
+  machine a first scan of 100,000 freshly written files did not finish in it; see
+  [docs/performance.md](docs/performance.md).
 - The benchmarks in `docs/performance.md` come from one machine (Windows, and Linux in WSL 2 on
   the same hardware) and generated input. They are not a promise about other hardware or real
   repositories.

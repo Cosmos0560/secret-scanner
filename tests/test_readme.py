@@ -301,6 +301,8 @@ REQUIRED_LIMITATIONS = (
     "archives",
     "split across lines",
     "access time",
+    "cannot be scanned completely in one run",
+    "can only lower a limit, never raise it",
     "only look alike",
     "git must be trusted",
 )

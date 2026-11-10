@@ -1023,8 +1023,8 @@ phase report written. Tagging and pushing are yours.
      report.
   3. `pyproject.toml` classifier: `Development Status :: 4 - Beta` (first public release, measured
      on one machine), pinned by a test.
-- v0.15 (2026-11-10): Phase 6 interpretations, additions and findings, **awaiting acceptance**
-  (details in docs/phase-reports.md):
+- v0.15 (2026-11-10): Phase 6 interpretations, additions and findings, **accepted by the owner on
+  2026-11-11 as written** (see v0.16; details in docs/phase-reports.md):
   1. `scripts/bench.py`: the first scan of the files it has just written is reported apart from
      the repeat scans (the median of three gives the rates), because on the development machine
      the first open of a new file costs 7 to 20 ms. It measures trees of 1,000, 10,000 and 100,000
@@ -1053,3 +1053,23 @@ phase report written. Tagging and pushing are yours.
      (no output or tracked file names the account, the temporary directory or the checkout).
      The release-check driver is not part of the repository (it ran in a temporary directory
      outside it); what it did is in the Phase 6 report.
+- v0.16 (2026-11-11): owner decisions after CI run 8 on `6f397c4`, **accepted by the owner on
+  2026-11-11** (details in the addendum to the Phase 6 report, docs/phase-reports.md):
+  1. v0.15 is accepted as written.
+  2. `MAX_RUN_SECONDS` stays 600 for 1.0.0, and a configuration file can still only lower limits.
+     This closes the open decision of v0.15 item 2. The README Limitations say plainly that a tree
+     that needs more than 600 seconds cannot be scanned completely in one run (pinned by
+     `tests/test_readme.py`). A possible 1.1 item, not implemented: a command-line option for the
+     operator only (never repository configuration) that raises the time budget up to the hard
+     ceiling of 3,600 seconds.
+  3. The WSL spelling of the project folder in CLAUDE.md line 101 and in the hook test that quotes
+     that command is accepted.
+  4. The owner checked the commit metadata: every author and committer address is a GitHub
+     no-reply address. No address is written anywhere in the repository.
+  5. A default gate time of 76 s to 97 s on this machine is accepted for 1.0.0.
+  6. CI run 8 failed one test in one of six jobs:
+     `tests/test_demo_git.py::test_a_command_that_does_not_finish_is_a_git_error` set the demo
+     builder's timeout to 1 ms and expected a real `git init` to exceed it. That was a race in the
+     test, not a fault of the product: `gitio/demo_git.py` is unchanged. The test now reaches the
+     timeout with a child that never ends, and the rule for tests is: no test may depend on a real
+     process being faster or slower than a wall-clock timeout.
