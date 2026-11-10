@@ -119,8 +119,8 @@ nothing else is changed.
       "tool": {
         "driver": {
           "name": "secret-scanner",
-          "version": "0.1.0",
-          "semanticVersion": "0.1.0",
+          "version": "1.0.0",
+          "semanticVersion": "1.0.0",
           "informationUri": "https://github.com/Cosmos0560/secret-scanner",
           "rules": [
             {

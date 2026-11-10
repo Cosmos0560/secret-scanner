@@ -39,6 +39,7 @@ from tests.test_render_jsonl import (
 )
 
 DOC = (PROJECT_ROOT / "docs" / "siem-mapping.md").read_text(encoding="utf-8")
+INGESTED_TOOL_VERSION = "0.1.0"  # what the tool reported on 2026-11-09, the day of the real ingest
 
 
 def section(heading: str) -> str:
@@ -204,8 +205,18 @@ def test_the_stored_event_example_matches_the_finding_it_came_from(
         if name in cut:
             assert expected[name].startswith(value.removesuffix("..."))
             assert len(value) == len("...") + 12
+        elif name == "secret.tool_version":
+            # the one value that is not regenerated: the ingest is real and was done before the
+            # release, so the stored event keeps the version the tool reported on that day
+            assert value == INGESTED_TOOL_VERSION
         else:
             assert value == expected[name]
+    text = " ".join(section("## A real ingest").split())
+    assert f"every line carried `tool_version` `{INGESTED_TOOL_VERSION}`" in text
+    assert "The ingest was not repeated for the release" in text
+    history = json.loads(fenced("## Examples")[1])
+    assert history["secret"]["tool_version"] == INGESTED_TOOL_VERSION
+    assert f"reported version `{INGESTED_TOOL_VERSION}`" in " ".join(section("## Examples").split())
 
 
 def test_the_real_ingest_is_stated_with_its_result() -> None:

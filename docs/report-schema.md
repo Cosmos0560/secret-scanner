@@ -140,7 +140,7 @@ The table lists one row per finding, then a summary. An incomplete run says so i
 above the findings, and in the summary.
 
 ```
-secret-scanner 0.1.0 - scan of .
+secret-scanner 1.0.0 - scan of .
 generated 2026-10-13T06:50:48Z
 
 SEVERITY  CONFIDENCE  RULE               LOCATION         REDACTED
@@ -170,7 +170,7 @@ directory (the secrets were built at run time and exist nowhere in this reposito
   "schema": "secret-report/1",
   "tool": {
     "name": "secret-scanner",
-    "version": "0.1.0"
+    "version": "1.0.0"
   },
   "generated_at": "2026-10-13T06:50:48Z",
   "host": "example-host",
@@ -287,7 +287,7 @@ value. The command takes no path and writes only to standard output.
 A shortened table, produced by `secret-scanner rules`:
 
 ```
-secret-scanner 0.1.0 - 16 built-in rules
+secret-scanner 1.0.0 - 16 built-in rules
 rules file sha256 52928a72916a6e9a2b4691ad56b7b0ca9b6333d0657928348959259ea1568ba1
 
 ID                         SEVERITY  CONFIDENCE  DETECTOR     KEYWORDS
