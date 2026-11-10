@@ -139,6 +139,12 @@ def shown(path: str) -> str:
     return display_path(path, NOTICE_PATH_CHARS)
 
 
+def target_label(path: str, shown_as: str | None) -> str:
+    """What a report calls its target: the path as given, escaped, or the fixed label a caller
+    asked for (the demo, whose temporary directory would name the user's account)."""
+    return display_path(path if shown_as is None else shown_as, SHOWN_PATH_CHARS)
+
+
 def validate_paths(request: CommonRequest, extra: Mapping[str, str | None] | None = None) -> None:
     flavour = native_flavour(sys.platform)
     given: dict[str, str | None] = {

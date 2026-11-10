@@ -32,6 +32,12 @@ Format: newest first. Versions follow the PLAN.md phases until the first release
   on Ctrl-C. Exit code 3 without git (the history part is skipped).
 - Ctrl-C ends any command with exit code 130 and the message `interrupted`.
 
+### Changed
+
+- `secret-scanner demo` no longer prints the path of its temporary directory (it is random, it is
+  removed at the end, and on Windows it names the user's account). The introduction and the two
+  report headers show the fixed label `<temporary directory>` instead.
+
 ### Known, deliberate refusals
 
 - `scan-git` refuses a `.git` that is a file or a link (worktrees, submodule checkouts), object

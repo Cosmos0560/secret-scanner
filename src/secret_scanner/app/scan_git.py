@@ -23,13 +23,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from secret_scanner.app.common import (
-    SHOWN_PATH_CHARS,
     ScanOutcome,
     check_outputs,
-    display_path,
     finish_run,
     open_runner,
     prepare_run,
+    target_label,
     validate_paths,
 )
 from secret_scanner.core.clock import Clock
@@ -123,10 +122,12 @@ def run_scan_git(
     *,
     spawn: Spawn | None = None,
     environment: Mapping[str, str] | None = None,
+    shown_as: str | None = None,
 ) -> ScanOutcome:
     """Run the history scan described by `request`. Raises `SecretScannerError` subclasses:
     exit code 2 for usage, 3 when git is missing, too old, refused or fails, 4 when a limit stops
-    the run before anything could be reported."""
+    the run before anything could be reported. `shown_as` replaces the path in the report's
+    header; only the demo uses it, so that its random temporary directory is never printed."""
     validate_paths(request, {"--git": request.git})
     _validate_revisions(request)
     context = prepare_run(request)
@@ -197,7 +198,7 @@ def run_scan_git(
         context,
         result,
         target=Target.GIT,
-        target_display=display_path(request.path, SHOWN_PATH_CHARS),
+        target_display=target_label(request.path, shown_as),
         clock=clock,
         extra_issues=extra,
         history_complete=complete_history,

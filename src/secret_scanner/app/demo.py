@@ -27,11 +27,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from secret_scanner.app.common import (
-    ScanOutcome,
-    display_path,
-    resolve_git_program,
-)
+from secret_scanner.app.common import ScanOutcome, resolve_git_program
 from secret_scanner.app.scan import ScanRequest, run_scan
 from secret_scanner.app.scan_git import GitScanRequest, run_scan_git
 from secret_scanner.core.clock import Clock
@@ -49,7 +45,9 @@ __all__ = ["DemoOutcome", "DemoPlan", "PlantedFake", "plan_demo", "run_demo"]
 
 SEED = "demo"
 HOST_LABEL = "demo"  # not used in the table; it keeps the host name lookup out of the demo
-SHOWN_PATH_CHARS = 120
+# The directory's real path is never printed: it is random, it is gone when the demo ends, and on
+# Windows it names the user's account. Every place that would show it shows this label instead.
+SHOWN_DIRECTORY = "<temporary directory>"
 BASELINE_REASON = "demo: this fake is accepted so that the report shows a suppressed finding"
 TREE = "tree"
 REPO = "repo"
@@ -150,6 +148,7 @@ def _scan_tree(box: str, clock: Clock, plan: DemoPlan) -> ScanOutcome:
     second = run_scan(
         ScanRequest(path=tree, baseline=baseline, show_suppressed=True, host_label=HOST_LABEL),
         clock,
+        shown_as=f"{SHOWN_DIRECTORY}/{TREE}",
     )
     shown = second.report.findings
     _expect(
@@ -191,6 +190,7 @@ def _scan_history(
         GitScanRequest(path=repo, git=git, host_label=HOST_LABEL),
         clock,
         environment=environment,
+        shown_as=f"{SHOWN_DIRECTORY}/{REPO}",
     )
     found = history.report.findings
     _expect(
@@ -201,12 +201,12 @@ def _scan_history(
     return files, history, added
 
 
-def _intro(box: str) -> str:
+def _intro() -> str:
     return (
         "secret-scanner demo\n"
         "===================\n\n"
-        "Everything below happens in a temporary directory that is removed at the end:\n"
-        f"  {display_path(box, SHOWN_PATH_CHARS)}\n\n"
+        "Everything below happens in a temporary directory that is removed at the end,\n"
+        f"shown here as {SHOWN_DIRECTORY}.\n\n"
         "All secrets are fakes, built at run time from fragments; none is a real credential.\n"
         "The tool never prints a whole secret: it prints a short public prefix, the length and\n"
         "a short hash of the secret, and the place where it was found.\n"
@@ -266,7 +266,7 @@ def run_demo(
     plan = plan_demo()
     box = sandbox.create_sandbox(parent)
     try:
-        parts = [_intro(box)]
+        parts = [_intro()]
         second = _scan_tree(box, clock, plan)
         parts.append(_directory_part(second))
         notices: tuple[str, ...] = ()

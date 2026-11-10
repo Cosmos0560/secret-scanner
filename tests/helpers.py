@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import getpass
+import os
+import re
+import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -54,6 +58,54 @@ def public_prefix_length(rule: Rule) -> int:
             break
         length += sum(len(part) for part in segment.parts)
     return max(length, rule.shown_chars)
+
+
+# -- text that must not say where it was produced ----------------------------------------------
+
+# An absolute path of any kind: `C:\dir` or `C:/dir`, a UNC or device path, and a POSIX path (a
+# `/` that starts a name and follows nothing a relative path or a URL would have before it).
+ABSOLUTE_PATH_PATTERNS = (
+    ("a Windows drive path", re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:[\\/]")),
+    ("a UNC or device path", re.compile(r"(?<![\\/])\\\\[A-Za-z0-9?.]")),
+    ("a POSIX absolute path", re.compile(r"(?<![\w.>/:\\~-])/[A-Za-z0-9._~-]")),
+)
+
+
+def login_name() -> str | None:
+    """The account name of the person running the suite, or `None` when it cannot be read."""
+    try:
+        return getpass.getuser() or None
+    except (KeyError, OSError):
+        return None
+
+
+def path_spellings(directory: str | Path) -> set[str]:
+    """The ways one directory can be written: as given and resolved, with either separator."""
+    spellings = set()
+    for form in (str(directory), os.path.realpath(directory)):
+        spellings.update({form, form.replace("\\", "/"), form.replace("/", "\\")})
+    return {spelling for spelling in spellings if len(spelling) > 3}
+
+
+def local_traces(
+    text: str, *directories: str | Path, absolute_paths: bool = True, names: tuple[str, ...] = ()
+) -> list[str]:
+    """What in `text` tells a reader where, or under which account, it was produced: an absolute
+    path, one of `directories` (the system temporary directory is always one), one of `names`,
+    or the account name as a part of a path. Returns one description per trace; empty is clean.
+    The descriptions never repeat the text itself."""
+    found = []
+    if absolute_paths:
+        found += [what for what, pattern in ABSOLUTE_PATH_PATTERNS if pattern.search(text)]
+    folded = text.casefold()
+    for number, directory in enumerate((tempfile.gettempdir(), *directories)):
+        if any(spelling.casefold() in folded for spelling in path_spellings(directory)):
+            found.append("the system temporary directory" if number == 0 else f"directory {number}")
+    found += [f"name {number}" for number, name in enumerate(names, 1) if name.casefold() in folded]
+    user = login_name()
+    if user and re.search(r"[\\/]" + re.escape(user.casefold()) + r"(?![\w.-])", folded):
+        found.append("the account name as a part of a path")
+    return found
 
 
 # -- model builders for renderer and application tests ---------------------------------------

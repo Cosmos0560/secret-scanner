@@ -18,7 +18,7 @@ import pytest
 
 from secret_scanner.app import demo as demo_module
 from secret_scanner.app.common import resolve_git_program
-from secret_scanner.app.demo import DemoOutcome, plan_demo, run_demo
+from secret_scanner.app.demo import SHOWN_DIRECTORY, DemoOutcome, plan_demo, run_demo
 from secret_scanner.app.scan import run_scan
 from secret_scanner.cli import main as cli_main
 from secret_scanner.core.errors import DemoError, ExitCode
@@ -28,7 +28,7 @@ from secret_scanner.fs.sandbox import PREFIX
 from secret_scanner.gitio.demo_git import DemoRepo, environment_for
 from secret_scanner.services.loader import load_builtin_rules
 from tests.audit import Recording, recording
-from tests.helpers import PROJECT_ROOT, FakeClock
+from tests.helpers import PROJECT_ROOT, FakeClock, local_traces, login_name
 
 NO_GIT = {"PATH": ""}
 GIT_SUBCOMMANDS = {"init", "add", "rm", "commit", "rev-parse"}
@@ -140,6 +140,61 @@ def test_the_demo_prints_no_full_fake(
     for fake in plan_demo().fakes:
         assert_not_leaked(shown, fake.secret, allowed_shown=fake.allowed_shown)
     assert shown.isascii() or "\r" not in shown
+
+
+@pytest.mark.requires_git
+def test_the_demo_output_names_no_real_path_account_or_temporary_directory(
+    real_run: RealRun,
+) -> None:
+    """The directory is random, is gone at the end and, on Windows, names the user's account: the
+    demo shows a fixed label for it (owner decision, Phase 6 step 0a)."""
+    shown = real_run.outcome.text + "\n".join(real_run.outcome.notices)
+    assert local_traces(shown, real_run.parent) == []
+    assert PREFIX not in shown, "the directory's own random name is not printed either"
+    assert f"shown here as {SHOWN_DIRECTORY}." in shown
+    assert f" - scan of {SHOWN_DIRECTORY}/tree\n" in shown
+    assert f" - history of {SHOWN_DIRECTORY}/repo\n" in shown
+
+
+@pytest.mark.slow
+@pytest.mark.requires_git
+def test_the_demo_prints_the_same_text_wherever_its_directory_is(
+    real_run: RealRun, tmp_path: Path
+) -> None:
+    """Nothing in the text depends on the place, so nothing in it can name the place."""
+    elsewhere = tmp_path / "Users" / "some-account" / "Temp"
+    elsewhere.mkdir(parents=True)
+    again = run_demo(FakeClock(), parent=str(elsewhere))
+    assert again.text == real_run.outcome.text
+    assert again.notices == real_run.outcome.notices
+    assert local_traces(again.text, elsewhere, names=("some-account",)) == []
+
+
+def test_without_git_the_demo_output_names_no_real_path_either(parent: Path) -> None:
+    outcome = run_demo(FakeClock(), parent=str(parent), environment=NO_GIT)
+    assert local_traces(outcome.text + "\n".join(outcome.notices), parent) == []
+    assert PREFIX not in outcome.text
+
+
+def test_the_check_for_local_traces_finds_each_kind(tmp_path: Path) -> None:
+    """The helper behind the test above is not vacuous."""
+    assert local_traces("a relative/path.txt:2:14 and <label>/tree, --format json") == []
+    assert local_traces("see https://example.invalid/page") == []
+    assert local_traces("scan of C:" + "/" + "work") == ["a Windows drive path"]
+    assert local_traces("scan of d:" + "\\" + "work") == ["a Windows drive path"]
+    assert local_traces("at " + "\\" * 2 + "server" + "\\" + "share") == ["a UNC or device path"]
+    assert local_traces("scan of /srv/project") == ["a POSIX absolute path"]
+    assert local_traces("/srv/project", absolute_paths=False) == []
+    assert "directory 1" in local_traces(f"in {tmp_path}", tmp_path)
+    assert "directory 1" in local_traces(f"in {tmp_path.as_posix().upper()}", tmp_path)
+    assert "the system temporary directory" in local_traces(f"{tempfile.gettempdir()}/x")
+    assert local_traces("made by Some-Account", names=("some-account",)) == ["name 1"]
+    user = login_name()
+    if user is not None:
+        assert "the account name as a part of a path" in local_traces(
+            f"home/{user}/x", absolute_paths=False
+        )
+        assert local_traces(f"the word {user} alone, or home/{user}-other") == []
 
 
 @pytest.mark.requires_git
@@ -356,8 +411,8 @@ def test_a_demo_error_is_an_ordinary_error_exit(
 def test_the_demo_works_as_a_real_process_with_a_clean_exit(
     tmp_path: Path, assert_not_leaked: Callable[..., None]
 ) -> None:
-    temporary = tmp_path / "tmp"
-    temporary.mkdir()
+    temporary = tmp_path / "Users" / "some-account" / "Temp"  # the shape of a Windows profile
+    temporary.mkdir(parents=True)
     environment = {
         "PATH": os.environ.get("PATH", ""),
         "TMP": str(temporary),
@@ -382,5 +437,6 @@ def test_the_demo_works_as_a_real_process_with_a_clean_exit(
     assert done.stderr == ""
     assert "Step 2: scan git history" in done.stdout
     assert os.listdir(temporary) == []
+    assert local_traces(done.stdout, temporary, tmp_path, names=("some-account",)) == []
     for fake in plan_demo().fakes:
         assert_not_leaked(done.stdout, fake.secret, allowed_shown=fake.allowed_shown)
