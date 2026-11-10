@@ -23,6 +23,8 @@ repositories.
 | git | 2.54.0.windows.1 |
 | Date | 2026-11-10 |
 
+These are the Windows values; the Linux run further down states its own.
+
 Processor, memory, disk and the antivirus state were read with `Get-CimInstance`,
 `Get-PhysicalDisk` and `Get-MpComputerStatus`; the rest is printed by the script. The scanner is
 single-threaded, so the number of processors does not matter to it.
@@ -111,6 +113,37 @@ commits the first scan was faster than the repeat median. `git fast-import` writ
 into one pack file, so a history scan does not open thousands of new files the way a directory
 scan does.
 
+## The same measurement on Linux (WSL 2, same hardware)
+
+The same script and command in WSL 2 Ubuntu on the same computer, from a clone of commit
+`9c9ea00`. The generated files were in `/tmp`, which is a `tmpfs` there: they were in memory, so
+no disk is part of these numbers. Python is 3.14.4 here (outside the CI matrix) and 3.13.14 on
+Windows, so the two tables differ in operating system, file system and Python version at once.
+
+- Date: 2026-11-10
+- Command: `python scripts/bench.py --files 1000,10000,100000 --commits 1000,5000 --memory`
+- secret-scanner: 1.0.0
+- Operating system: Linux 6.18.33.2-microsoft-standard-WSL2 (#1 SMP PREEMPT_DYNAMIC Thu Jun 18 21:54:43 UTC 2026)
+- Machine: x86_64, 14 logical processors
+- Python: CPython 3.14.4
+- git: git version 2.53.0
+- Timing: one first scan, then 3 repeat scan(s); rates use the repeat median
+
+| Files | MiB scanned | First scan, s | Repeat scan, s | Files/s | MiB/s | Findings (found of planted) | Peak MiB (tracemalloc) |
+|---|---|---|---|---|---|---|---|
+| 1,000 | 1.9 | 0.18 | 0.17 | 5,882 | 11.3 | 10 of 10 | 1.0 |
+| 10,000 | 19.3 | 1.79 | 1.70 | 5,874 | 11.3 | 100 of 100 | 1.1 |
+| 100,000 | 193.0 | 29.71 | 33.48 | 2,987 | 5.8 | 1000 of 1000 | 1.7 |
+
+| Commits | Blobs scanned | MiB scanned | First scan, s | Repeat scan, s | Commits/s | Blobs/s | MiB/s | Findings (found of planted) | Peak MiB (tracemalloc) |
+|---|---|---|---|---|---|---|---|---|---|
+| 1,000 | 2,000 | 3.9 | 1.10 | 1.26 | 793 | 1,586 | 3.1 | 4 of 4 | 2.3 |
+| 5,000 | 10,000 | 19.3 | 5.85 | 6.12 | 818 | 1,635 | 3.2 | 20 of 20 | 4.4 |
+
+Here the first scan costs the same as a repeat scan, and 100,000 files are scanned completely in
+about 30 seconds, far inside the time budget. The rate for 100,000 files is about half the rate
+for 10,000; why was not investigated.
+
 ## The entropy detector on real files (PLAN.md D5)
 
 How many findings the entropy detector produces at its default thresholds, on this repository's
@@ -154,22 +187,24 @@ D18 says that a default changes only with a measured reason. Checked against the
 |---|---|---|---|
 | `MAX_RUN_SECONDS` | 600 | 4.2 to 4.7 MiB/s and about 2,300 small files per second on files opened before; 7 to 20 ms per file on files just written | 600 s x 4.2 MiB/s = 2,520 MiB: at the measured rate the time budget is reached before `MAX_TOTAL_BYTES`. A first scan of 100,000 freshly written files did not finish inside it. |
 | `MAX_TOTAL_BYTES` | 4 GiB | not reached in any run (largest: 193 MiB) | On this machine the time budget stops a scan first. |
-| `MAX_FILES` | 200,000 | 100,000 files and 1,000 directories scanned completely (the traced run) | Not reached. |
+| `MAX_FILES` | 200,000 | 100,000 files and 1,000 directories scanned completely (the traced run on Windows, every run on Linux) | Not reached. |
 | `MAX_FILE_BYTES` | 8 MiB | largest generated file about 190 KiB; one real file above the limit was skipped and reported | Memory for a file near the limit was not measured. |
 | `MAX_GIT_COMMITS`, `MAX_GIT_BLOBS` | 200,000 / 1,000,000 | 5,000 commits and 10,000 blobs in 7.9 s | Not reached. Nothing larger than 5,000 commits was measured. |
 | `MAX_FINDINGS_PER_FILE` | 200 | reached by four files of the installed packages at low confidence | Works as designed: recorded as an issue, run incomplete. |
 
 **No default was changed.** The one limit the measurements put in question is `MAX_RUN_SECONDS`:
 a configuration file can lower a limit but not raise it, so a tree that needs more than 600
-seconds cannot be scanned completely in one run on a machine like this one. Until that is decided
+seconds cannot be scanned completely in one run. On Windows with real-time protection that was a
+first scan of 100,000 new files; on Linux the same tree took 30 seconds. Until that is decided
 (a higher default, or letting a configuration file raise a limit up to its hard ceiling of 3,600
 seconds), the ways around it are to scan the tree in parts, or to scan again: a second scan of the
 same files is fast.
 
 ## What these numbers do not say
 
-- One machine, one operating system, one Python version, one day. Other hardware, another
-  antivirus product or none, and Linux will give other numbers.
+- One computer and one day: Windows on its disk, and Linux inside WSL 2 on a memory file system.
+  Other hardware, a real disk under Linux, another antivirus product or none will give other
+  numbers.
 - Generated text is not a real repository. Real files have longer lines, more keyword hits (each
   one runs a rule's pattern) and other size distributions.
 - Peak memory is Python's own allocations during a scan of small files. A scan reads one file at a

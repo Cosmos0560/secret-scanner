@@ -592,8 +592,9 @@ or document does not exist.
   the operating system (and real-time antivirus protection, where it is on) inspects new files
   when they are first opened. With the default time budget of 600 seconds a very large, freshly
   written tree can end as an incomplete run; see [docs/performance.md](docs/performance.md).
-- The benchmarks in `docs/performance.md` come from one machine and generated input. They are not
-  a promise about other hardware or real repositories.
+- The benchmarks in `docs/performance.md` come from one machine (Windows, and Linux in WSL 2 on
+  the same hardware) and generated input. They are not a promise about other hardware or real
+  repositories.
 - Two tests depend on the machine: the Windows test that plants a real executable needs the C#
   compiler that ships with Windows (`csc.exe`), and the test guard that records file access
   resolves directory handles through `/proc/self/fd` on POSIX, so it works on Linux and fails

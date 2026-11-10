@@ -224,7 +224,7 @@ PERFORMANCE = (PROJECT_ROOT / "docs" / "performance.md").read_text(encoding="utf
 
 def test_every_command_in_the_performance_document_is_one_the_script_accepts() -> None:
     commands = re.findall(r"^- Command: `python scripts/bench\.py ([^`]+)`$", PERFORMANCE, re.M)
-    assert len(commands) == 3
+    assert len(commands) == 4
     parser = bench.build_parser()
     for command in commands:
         args = parser.parse_args(command.split())
@@ -238,7 +238,7 @@ def test_the_tables_of_the_performance_document_have_the_scripts_columns() -> No
     for headers in (bench.TREE_HEADERS, bench.HISTORY_HEADERS, bench.CORPUS_HEADERS):
         assert "| " + " | ".join(headers) + " |" in PERFORMANCE
     found = re.findall(r"\| (\d+) of (\d+)(?: \(incomplete run\))? \|", PERFORMANCE)
-    assert len(found) == 6
+    assert len(found) == 11
     assert all(left == right for left, right in found), "every run found exactly what was planted"
 
 
