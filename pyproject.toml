@@ -13,7 +13,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Otabek Yakubov" }]
 keywords = ["security", "secrets", "scanner", "defensive"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
