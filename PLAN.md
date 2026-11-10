@@ -1010,3 +1010,16 @@ phase report written. Tagging and pushing are yours.
      demo); `DemoError`; a custom rule's name and description are escaped by `info_for_rule`.
      New test infrastructure: `tests/audit.py` (audit hooks), `tests/sarif_check.py`,
      `tests/doc_samples.py`.
+- v0.14 (2026-11-10): owner decisions at the start of the Phase 6 session, **accepted by the owner
+  on 2026-11-10** (CI run 7 on `13b772a` is green on all six jobs):
+  1. The demo never prints the real path of its temporary directory (it is random, it is removed
+     at the end, and on Windows it names the user's account). The introduction and the two report
+     headers show the fixed label `<temporary directory>`; a test proves that the demo's output
+     holds no absolute path, account name or temporary directory. Implementation: `run_scan` and
+     `run_scan_git` take `shown_as`, used by `app/demo.py` only; no command-line option is added.
+  2. Default gate time: 72 s to 82 s on this machine is accepted. It is above the 60 s target of
+     CLAUDE.md section 7 and below the 90 s at which tests must move to `slow`. Phase 6 does not
+     spend time on gate speed. This closes the "default gate 72.7 s to 82.1 s" gap of the Phase 5
+     report.
+  3. `pyproject.toml` classifier: `Development Status :: 4 - Beta` (first public release, measured
+     on one machine), pinned by a test.

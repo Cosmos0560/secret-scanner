@@ -5,10 +5,15 @@ CLAUDE.md section 2, step 5. The last entry is the one a new session reads first
 
 ## In progress
 
-Nothing. Phase 5 (JSONL, SARIF, `rules`, demo, cross-format leak proof) is done and reported at the
-end of this file; PLAN.md v0.13 (its interpretations) and the rewrite of two unpushed commits were accepted by the owner on 2026-11-10. The next phase
-is Phase 6 (measurement, docs, README, release checks); it has not been started. The commits after
-`090df20` are local: the owner pushes them.
+Phase 6 (hardening, measurement, docs, release) was started on 2026-11-10. Owner decisions at the
+start of the session (PLAN.md v0.14, accepted 2026-11-10; CI run 7 on `13b772a` is green on all six
+jobs):
+
+1. The demo shows the fixed label `<temporary directory>` and never the real path of its temporary
+   directory (commit `0e64191`).
+2. The default gate at 72 s to 82 s on this machine is accepted: above the 60 s target of CLAUDE.md
+   section 7, below its 90 s limit. No Phase 6 time goes into gate speed.
+3. The classifier is `Development Status :: 4 - Beta`, pinned by a test.
 
 ## Phase 1 - Foundation, gate, hook, CI, pure core (2026-10-12)
 
