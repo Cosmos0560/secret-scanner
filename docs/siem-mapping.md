@@ -7,12 +7,16 @@ records how a line is built, how mini-siem reads it, the limits it must stay ins
 ingest. It is checked against the code by `tests/test_siem_mapping_doc.py`: a field name, a limit
 or an example that changes in the code and not here fails the gate.
 
-Produce a file and ingest it:
+Produce a file and ingest it, from the directory that holds `project`:
 
 ```
-secret-scanner scan . --format jsonl --host-label build-01 --output events.jsonl
+secret-scanner scan project --format jsonl --host-label build-01 --output events.jsonl
 mini-siem ingest events.jsonl --format json
 ```
+
+The report must be written outside the scanned directory: an `--output` inside it is refused, and
+so is any path that contains `..`. Scan the directory by name from its parent, as here, or give
+`--output` an absolute path.
 
 (`--format auto` also works: mini-siem guesses JSON from the first character of the first line.)
 

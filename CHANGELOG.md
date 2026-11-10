@@ -34,6 +34,9 @@ with the measured numbers are in `docs/phase-reports.md`.
 - `secret-scanner demo`: fake secrets planted in a temporary directory and a throw-away
   repository, scanned through the real code, shown redacted and removed again, also on failure and
   on Ctrl-C. Exit code 3 without git (the history part is skipped).
+- Documentation: `README.md` with real output, a claim-to-evidence table and the Limitations,
+  `docs/rules.md` (generated rule table), `docs/threat-model.md`, `docs/performance.md` (measured
+  with `scripts/bench.py`), `SECURITY.md` and `CONTRIBUTING.md`.
 
 ### Security
 
@@ -54,8 +57,17 @@ with the measured numbers are in `docs/phase-reports.md`.
   stores that use alternates, and repositories with grafts (exit code 3). PLAN.md v0.10, accepted
   by the owner on 2026-11-08.
 
+### Fixed
+
+- `docs/siem-mapping.md` showed a command (`scan . --output events.jsonl`) that the tool refuses,
+  because the output would be inside the scanned tree. The document now shows a command that
+  runs, and a test runs it as written.
+
 ### Known gaps
 
 - The SARIF output is not validated against the official schema and has not been uploaded to
   GitHub code scanning.
+- A first scan of a very large, freshly written tree can run into the default time budget of 600
+  seconds and end as an incomplete run (exit code 4); a configuration file cannot raise the
+  budget (`docs/performance.md`).
 - The full list is the Limitations section of `README.md`.

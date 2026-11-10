@@ -13,7 +13,7 @@ import pytest
 
 from tests import hygiene
 from tests.gitrepo import GitRepo
-from tests.helpers import PROJECT_ROOT
+from tests.helpers import PROJECT_ROOT, account_names, local_traces
 
 pytestmark = pytest.mark.requires_git
 
@@ -57,6 +57,23 @@ def test_no_email_addresses_in_the_repository(tmp_path: Path) -> None:
         if text is not None:
             hits += hygiene.email_addresses(name, text)
     assert hits == [], _fail_with(hits)
+
+
+def test_no_file_names_this_machines_account_temporary_directory_or_checkout(
+    tmp_path: Path,
+) -> None:
+    """Nothing tracked (or about to be) says where it was written: not the account's profile
+    directory (`Users/<name>`, `home/<name>`), not the system temporary directory, not the
+    absolute path of this checkout. Example paths in tests use invented names."""
+    names = hygiene.repository_files(PROJECT_ROOT, tmp_path)
+    assert account_names(), "the account name could not be read: the check would prove nothing"
+    found = [
+        f"{name}: {trace}"
+        for name, text in hygiene.read_text_files(PROJECT_ROOT, names)
+        if text is not None
+        for trace in local_traces(text, PROJECT_ROOT, absolute_paths=False)
+    ]
+    assert found == []
 
 
 def test_all_text_files_are_valid_utf8(tmp_path: Path) -> None:

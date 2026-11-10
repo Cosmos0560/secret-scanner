@@ -717,3 +717,33 @@ def test_the_walk_order_is_stable_between_runs(repo: GitRepo) -> None:
     second = [(f.location.path, f.location.commit) for f in scan(repo.path).report.findings]
     assert first == second
     assert len(first) == 3
+
+
+# -- nothing is discovered (CLAUDE.md section 5, invariant 10) ---------------------------------
+
+
+def test_configuration_rules_and_baselines_committed_to_a_repository_are_never_discovered(
+    repo: GitRepo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A repository cannot switch its own history scan off: files that ask for it, committed and
+    present in the work tree, are content. The result is the one of the scan before them."""
+    from tests.test_app_scan import DISCOVERABLE_NAMES, plant_discoverable_files
+
+    added = repo.commit_files("add a token", {"src/app.txt": f"token = {secret()}" + LF})
+    expected = scan(repo.path)
+    assert [(f.rule_id, f.location.commit) for f in expected.report.findings] == [
+        ("npm-token", added)
+    ]
+    plant_discoverable_files(repo.path, expected.report.findings[0].fingerprint)
+    repo.add(*DISCOVERABLE_NAMES, "pyproject.toml")
+    repo.commit("ask the scanner to look away")
+    monkeypatch.chdir(repo.path)
+    for outcome in (scan(repo.path), scan(Path("."))):
+        assert outcome.exit_code is ExitCode.FINDINGS
+        assert outcome.report.findings == expected.report.findings
+        assert (outcome.report.suppressed_by_fingerprint, outcome.report.suppressed_by_path) == (
+            0,
+            0,
+        )
+        assert outcome.report.complete
+        assert outcome.report.stats.commits == 2

@@ -11,6 +11,7 @@ import pytest
 
 from secret_scanner.app.common import display_path
 from secret_scanner.app.scan import ScanRequest, run_scan
+from secret_scanner.cli import main as cli_main
 from secret_scanner.core.models import OutputFormat, Target
 from secret_scanner.core.sanitize import sanitize
 from secret_scanner.render.jsonl import (
@@ -245,3 +246,37 @@ def test_the_document_holds_no_full_secret_and_is_ascii() -> None:
     for value in re.findall(r"sha256:([0-9a-f]+)", DOC):
         assert len(value) == 8
     assert "@" not in DOC.replace("@timestamp", ""), "no email address"
+
+
+def test_the_documented_command_runs_and_writes_the_documented_lines(
+    tmp_path: Path,
+    sample_lines: list[str],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The first command of the document, run as written from the directory that holds `project`.
+    (Until version 1.0.0 the document showed `scan . --output events.jsonl`, which the tool
+    refuses: an output inside the scanned tree.)"""
+    command = re.search(r"```\n(secret-scanner scan [^\n]+)\n", DOC)
+    assert command is not None
+    argv = command.group(1).split()
+    assert argv[:3] == ["secret-scanner", "scan", "project"]
+    make_sample_tree(tmp_path / "project")
+    monkeypatch.chdir(tmp_path)
+    assert cli_main.main(argv[1:]) == 1, "the sample project has two findings"
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "secret-scanner: report written to events.jsonl\n"
+    written = mask_times((tmp_path / "events.jsonl").read_text(encoding="utf-8")).splitlines()
+    expected = [
+        line.replace('"host":"example-host"', '"host":"build-01"').replace(
+            '"target_path":"."', '"target_path":"project"'
+        )
+        for line in sample_lines
+    ]
+    assert written == expected
+    # what the document says is refused, is refused
+    assert cli_main.main(["scan", "project", "--output", "project/events.jsonl"]) == 2
+    assert "must not be inside the scanned tree" in capsys.readouterr().err
+    assert cli_main.main(["scan", "project", "--output", "../events.jsonl"]) == 2
+    assert "path refused" in capsys.readouterr().err

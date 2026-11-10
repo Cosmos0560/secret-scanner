@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import getpass
+import itertools
 import os
 import re
+import sys
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -102,10 +104,26 @@ def local_traces(
         if any(spelling.casefold() in folded for spelling in path_spellings(directory)):
             found.append("the system temporary directory" if number == 0 else f"directory {number}")
     found += [f"name {number}" for number, name in enumerate(names, 1) if name.casefold() in folded]
-    user = login_name()
-    if user and re.search(r"[\\/]" + re.escape(user.casefold()) + r"(?![\w.-])", folded):
-        found.append("the account name as a part of a path")
+    for name in sorted(account_names()):
+        # only below a profile parent: `gitio/runner.py` is not the account `runner`
+        if re.search(r"(?:users|home)[\\/]+" + re.escape(name.casefold()) + r"(?![\w.-])", folded):
+            found.append("the account name as a part of a path")
+            break
     return found
+
+
+def account_names() -> set[str]:
+    """The names of the account that runs the suite: the login name, and the name of the profile
+    directory wherever a known location shows one (`Users/<name>`, `home/<name>`). The home
+    variables themselves point at a temporary directory during the session, so they are not
+    asked."""
+    names = {login_name() or ""}
+    for location in (tempfile.gettempdir(), sys.base_prefix, sys.executable, str(PROJECT_ROOT)):
+        parts = Path(os.path.realpath(location)).parts
+        for parent, child in itertools.pairwise(parts):
+            if parent.casefold() in {"users", "home"}:
+                names.add(child)
+    return {name for name in names if len(name) >= 2}
 
 
 # -- model builders for renderer and application tests ---------------------------------------

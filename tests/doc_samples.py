@@ -40,3 +40,25 @@ def make_sample_tree(root: Path) -> None:
 def mask_times(text: str) -> str:
     """Replace every `YYYY-MM-DDTHH:MM:SSZ` timestamp, which differs from run to run."""
     return TIMESTAMP.sub(MASK, text)
+
+
+RULES_TABLE_START = "<!-- rules-table:start (generated, see tests/doc_samples.py) -->"
+RULES_TABLE_END = "<!-- rules-table:end -->"
+
+
+def rules_markdown_table() -> str:
+    """The table of docs/rules.md, generated from the rules file and the detectors' descriptions
+    (the same data `secret-scanner rules` prints). No example secret is part of it."""
+    from secret_scanner.core.ruleinfo import rule_infos
+
+    lines = [
+        "| Id | Name | Detector | Severity | Confidence | Keywords | What it matches |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for info in rule_infos(load_builtin_rules().rules):
+        keywords = ", ".join(f"`{keyword}`" for keyword in info.keywords) or "(every line)"
+        lines.append(
+            f"| `{info.id}` | {info.name} | `{info.detector.value}` | {info.severity.value} "
+            f"| {info.confidence.value} | {keywords} | {info.description} |"
+        )
+    return "\n".join(lines)

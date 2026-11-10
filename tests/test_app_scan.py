@@ -537,3 +537,85 @@ def test_a_baseline_written_by_an_incomplete_run_says_so(root: Path, work: Path)
     assert outcome.exit_code is ExitCode.INCOMPLETE
     assert "the run was incomplete" in outcome.notices[0]
     assert Path(baseline).exists()
+
+
+# -- nothing is discovered: configuration, rules and baselines come from the command line only ----
+
+# Every name a tool of this kind might look for by itself, here or in another scanner.
+DISCOVERABLE_NAMES = (
+    ".secret-scanner.yaml",
+    ".secret-scanner.yml",
+    "secret-scanner.yaml",
+    "secret-scanner.yml",
+    ".secret-scanner/config.yaml",
+    ".secret-scanner-baseline.yaml",
+    "secret-scanner-baseline.yaml",
+    "baseline.yaml",
+    ".secrets.baseline",
+    "config.yaml",
+    "rules.yaml",
+    "builtin.yaml",
+    "rules/builtin.yaml",
+    ".config/secret-scanner/config.yaml",
+)
+
+
+def plant_discoverable_files(directory: Path, fingerprint: str) -> None:
+    """In `directory`: under every such name a configuration that would switch every rule off and
+    exclude every file, a baseline that would suppress `fingerprint` and every path, and a
+    `pyproject.toml` section with the same wishes."""
+    config = {
+        "version": 1,
+        "exclude": ["**"],
+        "disable_rules": sorted(BUILTIN_IDS),
+        "entropy": {"enabled": False},
+        "min_confidence": "high",
+        "fail_on": "critical",
+    }
+    baseline = {"version": 1, "suppress": [{"fingerprint": fingerprint}], "paths": ["**"]}
+    for number, name in enumerate(DISCOVERABLE_NAMES):
+        document = baseline if "baseline" in name or number % 2 else config
+        put(directory, name, dump_yaml(document))
+    put(
+        directory,
+        "pyproject.toml",
+        '[tool.secret-scanner]\nexclude = ["**"]\nbaseline = "baseline.yaml"\n',
+    )
+
+
+def test_configuration_rules_and_baselines_are_never_discovered(
+    root: Path, isolated_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CLAUDE.md section 5, invariant 10: a scanned tree (which may be an attacker's pull request)
+    cannot switch the scan off or excuse its own secret. Files that ask for it are planted in the
+    scanned tree, in the current directory and in the user's home; the result is the one of a run
+    without them, and they are scanned like any other file."""
+    put(root, "src/app.txt", f"token = {fake('npm-token')}\n")
+    expected = run(root)
+    assert [f.rule_id for f in expected.report.findings] == ["npm-token"]
+    fingerprint = expected.report.findings[0].fingerprint
+
+    plant_discoverable_files(root, fingerprint)
+    plant_discoverable_files(isolated_home, fingerprint)
+    try:
+        monkeypatch.chdir(root)
+        for request_root in (root, Path(".")):
+            outcome = run(request_root)
+            assert outcome.exit_code is ExitCode.FINDINGS
+            assert outcome.report.findings == expected.report.findings
+            assert (
+                outcome.report.suppressed_by_fingerprint,
+                outcome.report.suppressed_by_path,
+            ) == (
+                0,
+                0,
+            )
+            assert outcome.report.complete
+            # the planted files are content, not settings: every one of them was read and scanned
+            assert outcome.report.stats.files_scanned == 1 + len(DISCOVERABLE_NAMES) + 1
+            assert outcome.report.stats.skipped_excluded == 0
+    finally:
+        for name in (*DISCOVERABLE_NAMES, "pyproject.toml"):
+            (isolated_home / name).unlink()
+        for leftover in sorted(isolated_home.rglob("*"), reverse=True):
+            leftover.rmdir()
